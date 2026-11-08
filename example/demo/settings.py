@@ -46,7 +46,7 @@ CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-OLLAMA_MODEL = os.environ.get("DEMO_OLLAMA_MODEL", "qwen2.5:3b")
+OLLAMA_MODEL = os.environ.get("DEMO_OLLAMA_MODEL", "qwen2.5:1.5b")
 
 providers = []
 if os.environ.get("ANTHROPIC_API_KEY"):
@@ -54,7 +54,7 @@ if os.environ.get("ANTHROPIC_API_KEY"):
 ollama = {"name": "ollama", "model": OLLAMA_MODEL}
 if os.environ.get("DEMO_OLLAMA_CPU", "1") == "1":
     # On this machine the integrated GPU is far slower than the CPU for small models.
-    ollama["model_options"] = {"num_gpu": 0}
+    ollama["model_options"] = {"num_gpu": 0, "num_ctx": 2048}
 providers.append(ollama)
 # Last resort so the demo never shows a stack trace.
 providers.append({"name": "fake", "model": "offline-notice",

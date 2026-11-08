@@ -134,7 +134,7 @@ def warn_team(sender, spent, budget, **kwargs):
 `example/` is a fictional coffee shop with a support chat built on the library. The chat answers from the shop's help center and cites its sources. A side panel shows what each answer cost, which provider served it and every retry. A switch simulates the main provider going down, so you can watch the fallback happen live.
 
 ```bash
-ollama pull qwen2.5:3b              # free local model; set ANTHROPIC_API_KEY to put Claude first
+ollama pull qwen2.5:1.5b            # free local model (~1 GB); set ANTHROPIC_API_KEY to put Claude first
 cd example
 uv run --project .. python manage.py migrate
 uv run --project .. python manage.py seed_demo          # 30 days of synthetic history for the dashboard
