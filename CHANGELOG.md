@@ -1,22 +1,28 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-11-08)
 
-- Budget checks reuse the month's spend for `BUDGET_CHECK_TTL` seconds (default 60) instead of
-  summing the ledger on every call.
-- `manage.py llm_ledger_prune`: delete old calls (`--days`) or only their prompt/response text
-  (`--texts-older-than`), in batches, with `--dry-run`. Defaults from `RETENTION_DAYS` and
-  `TEXT_RETENTION_DAYS`.
+New:
+
 - Conversations: `complete`, `stream`, `acomplete` and `astream` accept a list of
   `{"role": "user" | "assistant", "content": ...}` messages. Evaluation cases accept them as `input`.
-- `llm_evaluate --models provider:model,...` runs the suites once per model, with no fallback, and
-  prints a comparison table. Runs record the model and the dashboard shows it.
-- Evaluations no longer use the cache, so a stored answer cannot stand in for the model being tested.
 - `await llm.acomplete()` and `await llm.astream()` (returns an `AsyncLLMStream`) for async views,
   with the same ledger, cache, budget, retries and fallback as the sync calls.
 - Monthly budgets per feature (`FEATURE_BUDGETS_USD`). Blocking only stops the feature over its own
   limit; `BudgetExceeded.feature` and the `feature` argument of `budget_exceeded` say which one.
-- Dashboard: a "Budgets per feature" table; budget bars turn amber at 80%.
+  The dashboard shows a "Budgets per feature" table, and budget bars turn amber at 80%.
+- `llm_evaluate --models provider:model,...` runs the suites once per model, with no fallback, and
+  prints a comparison table. Runs record the model, and the dashboard shows it.
+- `manage.py llm_ledger_prune`: delete old calls (`--days`) or only their prompt/response text
+  (`--texts-older-than`), in batches, with `--dry-run`. Defaults from `RETENTION_DAYS` and
+  `TEXT_RETENTION_DAYS`.
+- Budget checks reuse the month's spend for `BUDGET_CHECK_TTL` seconds (default 60) instead of
+  summing the ledger on every call.
+
+Changed:
+
+- Evaluations no longer use the cache, so a stored answer cannot stand in for the model being tested.
+- Requires a new migration (`0003`): run `manage.py migrate` after upgrading.
 
 ## 0.1.0 (2026-11-08)
 

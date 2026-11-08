@@ -4,7 +4,7 @@
     answer = llm.complete("Summarize this order: ...", feature="order_summary", user=request.user)
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 _LAZY = {"llm", "LLMClient", "LLMResult", "LLMStream", "AsyncLLMStream", "LLMError", "BudgetExceeded"}
 
