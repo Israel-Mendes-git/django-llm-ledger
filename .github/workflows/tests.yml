@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { python: "3.10", django: "4.2" }
+          - { python: "3.12", django: "5.1" }
+          - { python: "3.13", django: "5.2" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: |
+          uv sync --group dev
+          uv pip install "Django~=${{ matrix.django }}.0"
+      - name: Tests
+        run: uv run --no-sync pytest -q
+      - name: No missing migrations
+        run: uv run --no-sync django-admin makemigrations llm_ledger --check --dry-run
+        env:
+          DJANGO_SETTINGS_MODULE: tests.settings
+          PYTHONPATH: .:src

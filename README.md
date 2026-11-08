@@ -107,7 +107,17 @@ target: shop.ai.answer_customer   # called as answer_customer(input) -> str
 python manage.py llm_evaluate evals/ --min-score 0.9
 ```
 
-Every run is stored and shows up in the dashboard, so you can see quality next to cost.
+```text
+store-support  (evals/store-support.yaml)
+  PASS  return-window
+  ...
+  score 10/10 = 100%
+  cost $0.0042, 3120 tokens, 4120 ms per case
+```
+
+Each run also adds up what it cost, reading the ledger rows written while each case ran, so it
+works for `target` functions that make several calls. Runs are stored and show up in the dashboard
+with score, cost and time side by side: swap a model, rerun the suite, compare.
 
 ## Handling failures in your code
 

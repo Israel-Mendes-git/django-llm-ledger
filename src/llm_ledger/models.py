@@ -49,6 +49,10 @@ class EvalRun(models.Model):
     passed = models.PositiveIntegerField()
     score = models.FloatField()
     details = models.JSONField(default=list)
+    cost_usd = models.DecimalField(max_digits=12, decimal_places=6, null=True, blank=True,
+                                   help_text="Sum of the ledger calls made while running the suite.")
+    tokens = models.PositiveIntegerField(default=0)
+    latency_ms = models.PositiveIntegerField(default=0, help_text="Average time per case.")
 
     class Meta:
         ordering = ["-created_at"]

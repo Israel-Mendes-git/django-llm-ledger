@@ -144,7 +144,9 @@
       <h2>Answer quality</h2>
       {% if last_eval %}
         Last evaluation: <span class="score">{{ last_eval.passed }}/{{ last_eval.total }}</span> cases passed
-        ({{ last_eval.created_at|date:"M j, H:i" }}).
+        ({{ last_eval.created_at|date:"M j, H:i" }}){% if last_eval.latency_ms %}:
+        {% if last_eval.cost_usd is None %}free (local model){% else %}${{ last_eval.cost_usd|floatformat:4 }}{% endif %},
+        {{ last_eval.latency_ms }} ms per answer{% endif %}.
       {% else %}
         <span class="empty">No evaluation yet.</span>
       {% endif %}

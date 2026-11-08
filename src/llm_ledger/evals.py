@@ -19,6 +19,7 @@ Example (YAML or JSON):
 
 import json
 import re
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -31,6 +32,9 @@ class CaseResult:
     passed: bool
     output: str
     failures: list = field(default_factory=list)
+    cost_usd: float | None = None
+    tokens: int = 0
+    latency_ms: int = 0
 
 
 @dataclass
@@ -49,6 +53,20 @@ class EvalReport:
     @property
     def score(self):
         return self.passed / self.total if self.total else 0.0
+
+    @property
+    def cost_usd(self):
+        """Total cost, or None when no call had a known price."""
+        costs = [r.cost_usd for r in self.results if r.cost_usd is not None]
+        return sum(costs) if costs else None
+
+    @property
+    def tokens(self):
+        return sum(r.tokens for r in self.results)
+
+    @property
+    def avg_latency_ms(self):
+        return round(sum(r.latency_ms for r in self.results) / self.total) if self.total else 0
 
 
 class SuiteError(Exception):
@@ -95,6 +113,28 @@ def check(case, output):
     return failures
 
 
+def _usage_since(last_id):
+    """Cost and tokens of the ledger calls recorded after ``last_id``.
+
+    Reading the ledger (instead of the return value) also covers ``target`` functions,
+    which may make any number of calls and return plain text.
+    """
+    from django.db.models import Sum
+
+    from .models import LLMCall
+
+    totals = LLMCall.objects.filter(id__gt=last_id).aggregate(
+        cost=Sum("cost_usd"), inp=Sum("input_tokens"), out=Sum("output_tokens"))
+    cost = float(totals["cost"]) if totals["cost"] is not None else None
+    return cost, (totals["inp"] or 0) + (totals["out"] or 0)
+
+
+def _last_call_id():
+    from .models import LLMCall
+
+    return LLMCall.objects.order_by("-id").values_list("id", flat=True).first() or 0
+
+
 def run_suite(suite, *, client=None, save=True):
     from .client import LLMError, llm
 
@@ -104,6 +144,8 @@ def run_suite(suite, *, client=None, save=True):
 
     results = []
     for case in suite["cases"]:
+        last_id = _last_call_id()
+        started = time.perf_counter()
         try:
             if target:
                 output = str(target(case["input"]))
@@ -111,11 +153,12 @@ def run_suite(suite, *, client=None, save=True):
                 output = client.complete(
                     case["input"], feature=feature, system=suite.get("system"), use_cache=False
                 ).text
+            failures = check(case, output)
         except LLMError as exc:
-            results.append(CaseResult(case["id"], False, "", [f"error: {exc}"]))
-            continue
-        failures = check(case, output)
-        results.append(CaseResult(case["id"], not failures, output, failures))
+            output, failures = "", [f"error: {exc}"]
+        latency = round((time.perf_counter() - started) * 1000)
+        cost, tokens = _usage_since(last_id)
+        results.append(CaseResult(case["id"], not failures, output, failures, cost, tokens, latency))
 
     report = EvalReport(suite["name"], results)
     if save:
@@ -127,5 +170,8 @@ def run_suite(suite, *, client=None, save=True):
             passed=report.passed,
             score=report.score,
             details=[asdict(r) for r in results],
+            cost_usd=report.cost_usd,
+            tokens=report.tokens,
+            latency_ms=report.avg_latency_ms,
         )
     return report

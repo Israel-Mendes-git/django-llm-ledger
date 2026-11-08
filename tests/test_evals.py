@@ -87,3 +87,44 @@ def test_raw_prompt_suite_goes_through_the_ledger(tmp_path, ledger):
     path = write(tmp_path, "geo.json", {"name": "geo", "cases": [{"input": "Capital of France?", "must_contain": ["paris"]}]})
     call_command("llm_evaluate", str(path))
     assert LLMCall.objects.get().feature == "eval:geo"
+
+
+PAID = None
+
+
+def paid_target(question):
+    """A target that makes two paid calls per case, like a real feature with a rewrite step."""
+    draft = PAID.complete(question).text
+    return PAID.complete(draft).text
+
+
+def test_report_sums_cost_tokens_and_time_per_case(tmp_path, ledger):
+    from decimal import Decimal
+
+    from llm_ledger.client import LLMClient
+    from llm_ledger.providers import FakeProvider
+
+    global PAID
+    provider = FakeProvider("paid-model", reply="x" * 400)  # 100 output tokens
+    provider.is_local = False
+    ledger(PRICES={"paid-model": {"input": 3, "output": 15}})
+    PAID = LLMClient([provider])
+    path = write(tmp_path, "paid.json", {
+        "name": "paid", "target": "tests.test_evals.paid_target",
+        "cases": [{"input": "y" * 4000}, {"input": "z" * 4000}],
+    })
+    call_command("llm_evaluate", str(path), "--min-score", "0")
+    run = EvalRun.objects.get()
+    # Case 1: 1000 in + 100 out, then 100 in + 100 out => 0.0045 + 0.0018 = 0.0063.
+    # Case 2 repeats the second prompt ("x" * 400), which comes from the cache for free.
+    assert run.details[0]["cost_usd"] == pytest.approx(0.0063)
+    assert run.details[0]["tokens"] == 1300
+    assert run.details[1]["cost_usd"] == pytest.approx(0.0045)
+    assert run.cost_usd == Decimal("0.010800")
+    assert run.tokens == 1300 + 1100
+
+
+def test_free_models_report_unknown_cost(tmp_path):
+    call_command("llm_evaluate", str(write(tmp_path, "s.json", suite())), "--min-score", "0")
+    run = EvalRun.objects.get()
+    assert run.cost_usd is None and run.tokens == 0

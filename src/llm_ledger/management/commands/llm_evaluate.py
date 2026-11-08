@@ -46,6 +46,8 @@ class Command(BaseCommand):
                     self.stdout.write(f"        {failure}")
             style = self.style.SUCCESS if report.score >= min_score else self.style.ERROR
             self.stdout.write(style(f"  score {report.passed}/{report.total} = {report.score:.0%}"))
+            cost = "unknown" if report.cost_usd is None else f"${report.cost_usd:.4f}"
+            self.stdout.write(f"  cost {cost}, {report.tokens} tokens, {report.avg_latency_ms} ms per case")
 
         if worst < min_score:
             raise CommandError(f"Evaluation score below {min_score:.0%}.")
