@@ -15,9 +15,10 @@ jobs:
           - { python: "3.10", django: "4.2" }
           - { python: "3.12", django: "5.1" }
           - { python: "3.13", django: "5.2" }
+          - { python: "3.13", django: "6.1" }
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: ${{ matrix.python }}
       - name: Install
