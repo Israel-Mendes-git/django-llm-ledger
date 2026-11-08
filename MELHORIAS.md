@@ -10,9 +10,11 @@
 - Painel de custos no admin.
 - 37 testes passando.
 
+- Loja de demonstração em `example/` (Serra Verde Coffee): chat com fontes, painel de custo ao lado, simulação de queda do provedor. Prova de qualidade 10/10 com `qwen2.5:1.5b` local (07/11/2026). Capturas em `..\django-llm-ledger-shots\`.
+
 ## Próximo
-1. **Loja de demonstração** (pasta `example/`): chat de atendimento que responde a partir dos documentos da loja, com o painel de custo ao lado. Rodar com Ollama local.
-2. Ver o painel do admin de verdade no navegador e capturar tela para o README (ainda não foi visto, só testado).
+1. Fontes do chat: a busca por palavra às vezes traz seções sem relação (ex.: "Boleto" na pergunta sobre Portugal). Cortar resultados com pontuação baixa ou trocar por embeddings.
+2. Colocar as capturas no README.
 3. Streaming de resposta (o chat da demo vai precisar).
 4. Medir custo também nas avaliações e mostrar nota + custo lado a lado.
 5. GitHub Actions rodando testes e uma suíte de exemplo.
