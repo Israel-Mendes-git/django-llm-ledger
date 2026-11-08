@@ -27,7 +27,11 @@ class LLMError(Exception):
 
 
 class BudgetExceeded(LLMError):
-    pass
+    """The monthly budget is spent. ``feature`` is set when it was that feature's own budget."""
+
+    def __init__(self, message, *, feature=None):
+        super().__init__(message)
+        self.feature = feature
 
 
 @dataclass
@@ -94,11 +98,15 @@ class LLMStream:
         self.close()
 
 
-def month_spend():
+def month_spend(feature=None):
+    """Spend since the first day of the month, for every feature or for one."""
     from .models import LLMCall
 
     start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    total = LLMCall.objects.filter(created_at__gte=start).aggregate(total=Sum("cost_usd"))["total"]
+    calls = LLMCall.objects.filter(created_at__gte=start)
+    if feature is not None:
+        calls = calls.filter(feature=feature)
+    total = calls.aggregate(total=Sum("cost_usd"))["total"]
     return total or Decimal(0)
 
 
@@ -289,7 +297,7 @@ class LLMClient:
         user = user if getattr(user, "is_authenticated", False) else None
         common = {"request_id": request_id, "feature": feature, "user": user, "prompt_hash": prompt_hash}
 
-        self._check_budget()
+        self._check_budget(feature)
 
         ttl = conf.get("CACHE_TTL")
         cache = caches[conf.get("CACHE_ALIAS")] if use_cache and ttl else None
@@ -313,18 +321,22 @@ class LLMClient:
     def _cache_key(prompt_hash):
         return f"llm_ledger:{prompt_hash}"
 
-    def _check_budget(self):
-        budget = conf.get("MONTHLY_BUDGET_USD")
-        if budget is None:
-            return
-        budget = Decimal(str(budget))
-        spent = month_spend()
-        if spent < budget:
-            return
-        logger.warning("LLM monthly budget reached: spent %s of %s USD", spent, budget)
-        budget_exceeded.send(sender=type(self), spent=spent, budget=budget)
-        if conf.get("BLOCK_OVER_BUDGET"):
-            raise BudgetExceeded(f"Monthly LLM budget of {budget} USD reached (spent {spent}).")
+    def _check_budget(self, feature=""):
+        checks = [(None, conf.get("MONTHLY_BUDGET_USD"))]
+        if feature:
+            checks.append((feature, (conf.get("FEATURE_BUDGETS_USD") or {}).get(feature)))
+        for scope, budget in checks:
+            if budget is None:
+                continue
+            budget = Decimal(str(budget))
+            spent = month_spend(scope)
+            if spent < budget:
+                continue
+            what = f"budget of feature {scope!r}" if scope else "LLM budget"
+            logger.warning("Monthly %s reached: spent %s of %s USD", what, spent, budget)
+            budget_exceeded.send(sender=type(self), spent=spent, budget=budget, feature=scope)
+            if conf.get("BLOCK_OVER_BUDGET"):
+                raise BudgetExceeded(f"Monthly {what} of {budget} USD reached (spent {spent}).", feature=scope)
 
     @staticmethod
     def _record(common, *, provider, model, status, attempt=1, is_fallback=False, latency=0,

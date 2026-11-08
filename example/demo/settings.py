@@ -72,6 +72,8 @@ LLM_LEDGER = {
     "RETRY_BACKOFF": 0.3,
     "TIMEOUT": 120,
     "MONTHLY_BUDGET_USD": 20,
+    # Per-feature limits; product_descriptions sits near its limit to show the warning bar.
+    "FEATURE_BUDGETS_USD": {"support_chat": 5, "product_descriptions": 0.75, "order_summary": 1},
     "LOCAL_CURRENCY": {"code": "BRL", "rate": 5.4},
     "STORE_PROMPTS": True,  # fine for a demo with fake customers
 }

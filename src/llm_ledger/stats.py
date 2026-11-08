@@ -62,6 +62,16 @@ def dashboard(days=30):
         cost = per_day.get(day, ZERO)
         days_list.append({"day": day, "cost": cost, "pct": float(cost / peak * 100)})
 
+    feature_budgets = []
+    for feature, limit in sorted((conf.get("FEATURE_BUDGETS_USD") or {}).items()):
+        limit = Decimal(str(limit))
+        used = month.filter(feature=feature).aggregate(t=Sum("cost_usd"))["t"] or ZERO
+        feature_budgets.append({
+            "feature": feature, "spent": used, "budget": limit, "over": used >= limit,
+            "near": limit > 0 and used >= limit * Decimal("0.8"),
+            "pct": float(min(used / limit * 100, 100)) if limit else 100.0,
+        })
+
     local = conf.get("LOCAL_CURRENCY")
     return {
         "days": days,
@@ -71,6 +81,7 @@ def dashboard(days=30):
         "budget": budget,
         "budget_pct": float(min(spent / budget * 100, 100)) if budget else None,
         "over_budget": bool(budget is not None and spent >= budget),
+        "feature_budgets": feature_budgets,
         "totals": totals,
         "error_rate": (totals["errors"] / totals["calls"] * 100) if totals["calls"] else 0,
         "per_day": days_list,

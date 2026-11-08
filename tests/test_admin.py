@@ -50,3 +50,23 @@ def test_dashboard_page_renders(client):
 def test_dashboard_requires_staff(client):
     response = client.get("/admin/llm_ledger/llmcall/dashboard/")
     assert response.status_code == 302
+
+
+def test_dashboard_shows_feature_budgets(admin_client, ledger):
+    from decimal import Decimal
+
+    from llm_ledger.models import LLMCall
+
+    LLMCall.objects.create(provider="x", model="x", status="ok", cost_usd=Decimal("15"), prompt_hash="h",
+                           feature="support_chat")
+    ledger(FEATURE_BUDGETS_USD={"support_chat": 20, "summaries": 5})
+    rows = {r["feature"]: r for r in stats.dashboard()["feature_budgets"]}
+    assert rows["support_chat"]["pct"] == 75 and not rows["support_chat"]["near"]
+    ledger(FEATURE_BUDGETS_USD={"support_chat": 18, "summaries": 5})
+    rows = {r["feature"]: r for r in stats.dashboard()["feature_budgets"]}
+    assert rows["support_chat"]["near"] and not rows["summaries"]["near"]  # 15 of 18 = 83%
+    page = admin_client.get("/admin/llm_ledger/llmcall/dashboard/").content.decode()
+    assert "Budgets per feature" in page
+    assert "support_chat" in page and "15.00" in page and "18.00" in page
+    assert "ll-bar near" in page  # amber bar from 80% on
+    assert "summaries" in page  # listed even with no spend yet

@@ -19,7 +19,10 @@ DEFAULTS = {
     "CACHE_ALIAS": "default",
     # Monthly budget in USD. None disables the check.
     "MONTHLY_BUDGET_USD": None,
-    # When True, calls raise BudgetExceeded once the monthly budget is spent.
+    # Monthly budget per feature in USD: {"support_chat": 20}. Features not listed have no limit
+    # of their own (the global MONTHLY_BUDGET_USD still applies).
+    "FEATURE_BUDGETS_USD": {},
+    # When True, calls raise BudgetExceeded once the monthly budget (global or the feature's) is spent.
     "BLOCK_OVER_BUDGET": False,
     # Optional exchange rate to show costs in a second currency in the dashboard.
     "LOCAL_CURRENCY": None,  # e.g. {"code": "BRL", "rate": 5.4}

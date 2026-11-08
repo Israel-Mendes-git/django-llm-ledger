@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Monthly budgets per feature (`FEATURE_BUDGETS_USD`). Blocking only stops the feature over its own
+  limit; `BudgetExceeded.feature` and the `feature` argument of `budget_exceeded` say which one.
+- Dashboard: a "Budgets per feature" table; budget bars turn amber at 80%.
+
 ## 0.1.0 (2026-11-08)
 
 First release.

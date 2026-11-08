@@ -28,7 +28,7 @@ print(answer.text, answer.cost_usd, answer.latency_ms)
 - **Retries and fallback**: retryable errors (timeouts, 429, 5xx) are retried with exponential backoff; then the next provider in the chain takes over. Put a local model last and your feature keeps answering even when the paid API is down.
 - **Streaming**: `llm.stream()` yields the answer as it is written, with the same ledger, cache, retries and fallback.
 - **Cache**: identical requests are served from Django's cache and cost nothing.
-- **Budget guard**: a `budget_exceeded` signal when the monthly budget is reached, and optional hard blocking.
+- **Budget guard**: a monthly budget for the whole app and, optionally, one per feature. A `budget_exceeded` signal when one is reached, and optional hard blocking that only stops the feature over its limit.
 - **Evaluation suites**: a file of questions plus what a good answer must (not) contain. `manage.py llm_evaluate` scores them and fails your CI when the score drops.
 - **No vendor SDKs**: Ollama, OpenAI-compatible servers (OpenAI, LM Studio, vLLM, Groq...) and Anthropic over plain HTTP. Only dependency besides Django is `httpx`.
 
@@ -78,7 +78,8 @@ The dashboard lives at **Admin → LLM calls → Cost dashboard**.
 | `CACHE_TTL` | `3600` | Seconds to cache identical requests. `0` disables. |
 | `CACHE_ALIAS` | `"default"` | Which Django cache to use. |
 | `MONTHLY_BUDGET_USD` | `None` | Sends `budget_exceeded` when reached. |
-| `BLOCK_OVER_BUDGET` | `False` | Raise `BudgetExceeded` instead of just signalling. |
+| `FEATURE_BUDGETS_USD` | `{}` | Monthly limit per feature, e.g. `{"support_chat": 20}`. Shown in the dashboard; a bar turns amber at 80%. |
+| `BLOCK_OVER_BUDGET` | `False` | Raise `BudgetExceeded` instead of just signalling. With feature budgets, only the feature over its limit is blocked. |
 | `LOCAL_CURRENCY` | `None` | `{"code": "BRL", "rate": 5.4}` to show a second currency. |
 | `STORE_PROMPTS` | `False` | Store prompt and response text in the ledger. |
 
@@ -157,8 +158,9 @@ from llm_ledger import LLMError, BudgetExceeded, llm
 
 try:
     answer = llm.complete(question, feature="support")
-except BudgetExceeded:
+except BudgetExceeded as exc:
     ...  # e.g. show "the assistant is resting, talk to a human"
+         # exc.feature is "support" if it was that feature's budget, None for the global one
 except LLMError as exc:
     logger.error("every provider failed: %s", exc.errors)
 ```
@@ -170,8 +172,8 @@ from django.dispatch import receiver
 from llm_ledger.signals import budget_exceeded
 
 @receiver(budget_exceeded)
-def warn_team(sender, spent, budget, **kwargs):
-    ...
+def warn_team(sender, spent, budget, feature=None, **kwargs):
+    ...  # feature is None for the global budget
 ```
 
 ## Demo store

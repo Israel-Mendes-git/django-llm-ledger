@@ -161,3 +161,48 @@ def test_empty_chain_is_an_error(ledger):
     ledger(PROVIDERS=[])
     with pytest.raises(LLMError):
         llm.complete("x")
+
+
+def test_feature_budget_only_limits_its_own_feature(ledger):
+    LLMCall.objects.create(provider="x", model="x", status="ok", cost_usd=Decimal("3"), prompt_hash="h",
+                           feature="chat")
+    LLMCall.objects.create(provider="x", model="x", status="ok", cost_usd=Decimal("50"), prompt_hash="h",
+                           feature="reports")
+    received = []
+
+    def handler(sender, **kwargs):
+        received.append(kwargs)
+
+    budget_exceeded.connect(handler)
+    try:
+        ledger(FEATURE_BUDGETS_USD={"chat": 2}, BLOCK_OVER_BUDGET=True)
+        with pytest.raises(BudgetExceeded) as info:
+            llm.complete("q", feature="chat")
+        assert info.value.feature == "chat"
+        assert received[-1] == {"signal": budget_exceeded, "spent": Decimal("3"), "budget": Decimal("2"),
+                                "feature": "chat"}
+        # Other features keep working, even the one that spent far more: it has no limit of its own.
+        assert llm.complete("q", feature="reports").text
+        assert llm.complete("q").text
+    finally:
+        budget_exceeded.disconnect(handler)
+
+
+def test_feature_budget_also_blocks_streams(ledger):
+    LLMCall.objects.create(provider="x", model="x", status="ok", cost_usd=Decimal("3"), prompt_hash="h",
+                           feature="chat")
+    ledger(FEATURE_BUDGETS_USD={"chat": 2}, BLOCK_OVER_BUDGET=True)
+    with pytest.raises(BudgetExceeded):
+        llm.stream("q", feature="chat")  # raised at the call, before any response starts
+
+
+def test_global_budget_signal_has_no_feature(ledger):
+    LLMCall.objects.create(provider="x", model="x", status="ok", cost_usd=Decimal("10"), prompt_hash="h")
+    received = []
+    budget_exceeded.connect(lambda sender, **kw: received.append(kw), weak=False, dispatch_uid="t-global")
+    try:
+        ledger(MONTHLY_BUDGET_USD=5)
+        llm.complete("q", feature="chat")
+        assert received[0]["feature"] is None
+    finally:
+        budget_exceeded.disconnect(dispatch_uid="t-global")
