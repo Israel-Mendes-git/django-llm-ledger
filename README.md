@@ -27,6 +27,7 @@ print(answer.text, answer.cost_usd, answer.latency_ms)
 - **A cost dashboard in the Django admin**: spend this month vs. budget, cost per day, top features, models and users, error rate, fallback count.
 - **Retries and fallback**: retryable errors (timeouts, 429, 5xx) are retried with exponential backoff; then the next provider in the chain takes over. Put a local model last and your feature keeps answering even when the paid API is down.
 - **Streaming**: `llm.stream()` yields the answer as it is written, with the same ledger, cache, retries and fallback.
+- **Async views**: `await llm.acomplete()` and `await llm.astream()`.
 - **Cache**: identical requests are served from Django's cache and cost nothing.
 - **Budget guard**: a monthly budget for the whole app and, optionally, one per feature. A `budget_exceeded` signal when one is reached, and optional hard blocking that only stops the feature over its limit.
 - **Evaluation suites**: a file of questions plus what a good answer must (not) contain. `manage.py llm_evaluate` scores them and fails your CI when the score drops.
@@ -150,6 +151,33 @@ Ollama, OpenAI-compatible servers and Anthropic stream natively. A custom provid
 `stream()` method still works: it yields the whole answer at once.
 
 The demo store streams its chat as newline-delimited JSON (`example/store/views.py`).
+
+## Async views
+
+```python
+from django.http import JsonResponse, StreamingHttpResponse
+from llm_ledger import llm
+
+async def summary(request):
+    result = await llm.acomplete(prompt, feature="summary", user=request.user)
+    return JsonResponse({"text": result.text})
+
+async def chat(request):
+    stream = await llm.astream(question, feature="chat")   # budget and cache checked here
+
+    async def body():
+        async with stream:
+            async for chunk in stream:
+                yield chunk
+
+    return StreamingHttpResponse(body(), content_type="text/plain")
+```
+
+The async methods run the same code as the sync ones through Django's `sync_to_async`: the ledger
+is written with the ORM, which is synchronous, and one code path means the two APIs cannot drift
+apart. While a provider answers, the event loop stays free and other requests are served. The
+test suite checks both: a coroutine keeps running during a slow call, and two concurrent requests
+take about as long as one.
 
 ## Handling failures in your code
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `await llm.acomplete()` and `await llm.astream()` (returns an `AsyncLLMStream`) for async views,
+  with the same ledger, cache, budget, retries and fallback as the sync calls.
 - Monthly budgets per feature (`FEATURE_BUDGETS_USD`). Blocking only stops the feature over its own
   limit; `BudgetExceeded.feature` and the `feature` argument of `budget_exceeded` say which one.
 - Dashboard: a "Budgets per feature" table; budget bars turn amber at 80%.

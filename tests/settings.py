@@ -1,3 +1,6 @@
+import os
+import tempfile
+
 SECRET_KEY = "tests"
 DEBUG = True
 USE_TZ = True
@@ -28,7 +31,13 @@ TEMPLATES = [
         },
     }
 ]
-DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}
+# A file, not ":memory:": in-memory SQLite fails at once on concurrent writes ("table is locked")
+# instead of waiting, which the async concurrency test needs.
+DATABASES = {"default": {
+    "ENGINE": "django.db.backends.sqlite3",
+    "NAME": ":memory:",
+    "TEST": {"NAME": os.path.join(tempfile.gettempdir(), f"llm_ledger_tests_{os.getpid()}.sqlite3")},
+}}
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LLM_LEDGER = {

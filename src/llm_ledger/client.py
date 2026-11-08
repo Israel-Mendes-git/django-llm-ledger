@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from asgiref.sync import sync_to_async
 from django.core.cache import caches
 from django.db.models import Sum
 from django.utils import timezone
@@ -98,6 +99,54 @@ class LLMStream:
         self.close()
 
 
+_END = object()
+
+
+class AsyncLLMStream:
+    """What ``await llm.astream()`` returns: ``async for`` over it, then read ``.result``.
+
+    It drives an ``LLMStream`` through ``sync_to_async``, so it has the same rules: fallback
+    only before the first chunk, early close recorded in the ledger.
+    """
+
+    def __init__(self, stream):
+        self._stream = stream
+
+    @property
+    def request_id(self):
+        return self._stream.request_id
+
+    @property
+    def result(self):
+        return self._stream.result
+
+    @property
+    def text(self):
+        return self._stream.text
+
+    def _next(self):
+        # StopIteration cannot cross into a coroutine, so the end is signalled with a sentinel.
+        return next(self._stream, _END)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        chunk = await sync_to_async(self._next)()
+        if chunk is _END:
+            raise StopAsyncIteration
+        return chunk
+
+    async def aclose(self):
+        await sync_to_async(self._stream.close)()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        await self.aclose()
+
+
 def month_spend(feature=None):
     """Spend since the first day of the month, for every feature or for one."""
     from .models import LLMCall
@@ -187,6 +236,24 @@ class LLMClient:
                 )
 
         raise LLMError("All LLM providers failed:\n" + "\n".join(errors), errors)
+
+    async def acomplete(self, prompt, **kwargs):
+        """``complete`` for async views: same arguments, same ledger, retries and fallback.
+
+        The call runs through ``sync_to_async``: the ledger is written with the ORM, which is
+        synchronous, and keeping one code path means the async API cannot drift from the sync one.
+        The event loop stays free while the provider answers.
+        """
+        return await sync_to_async(self.complete)(prompt, **kwargs)
+
+    async def astream(self, prompt, **kwargs):
+        """``stream`` for async views. Budget and cache are checked when you await it.
+
+            stream = await llm.astream(question, feature="support")
+            async for chunk in stream:
+                ...
+        """
+        return AsyncLLMStream(await sync_to_async(self.stream)(prompt, **kwargs))
 
     def stream(
         self,
