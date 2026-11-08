@@ -42,7 +42,7 @@ cases:
   - id: unknown-tea
     input: Do you sell green tea?
     any_of: ["don't know", "do not know", "not sure", "human", "only coffee", "coffee"]
-    must_not_contain: ["we sell green tea", "yes, we sell"]
+    must_not_contain: ["we sell green tea", "yes, we sell", "we do sell", "our range includes"]
 
   - id: talk-to-someone
     input: How do I talk to someone?

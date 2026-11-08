@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `llm_evaluate --models provider:model,...` runs the suites once per model, with no fallback, and
+  prints a comparison table. Runs record the model and the dashboard shows it.
+- Evaluations no longer use the cache, so a stored answer cannot stand in for the model being tested.
 - `await llm.acomplete()` and `await llm.astream()` (returns an `AsyncLLMStream`) for async views,
   with the same ledger, cache, budget, retries and fallback as the sync calls.
 - Monthly budgets per feature (`FEATURE_BUDGETS_USD`). Blocking only stops the feature over its own

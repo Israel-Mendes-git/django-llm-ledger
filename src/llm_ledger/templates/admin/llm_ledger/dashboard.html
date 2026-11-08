@@ -103,7 +103,7 @@
       <thead><tr><th>Suite</th><th class="num">Score</th><th class="num">Cost (USD)</th><th class="num">Per case</th><th>When</th></tr></thead>
       <tbody>
         {% for run in last_evals %}
-          <tr><td>{{ run.suite }}</td><td class="num">{{ run.passed }}/{{ run.total }}</td><td class="num">{% if run.cost_usd is not None %}{{ run.cost_usd|floatformat:4 }}{% else %}—{% endif %}</td><td class="num">{% if run.latency_ms %}{{ run.latency_ms }} ms{% else %}—{% endif %}</td><td>{{ run.created_at|date:"SHORT_DATETIME_FORMAT" }}</td></tr>
+          <tr><td>{{ run.suite }}{% if run.model %} <small>[{{ run.model }}]</small>{% endif %}</td><td class="num">{{ run.passed }}/{{ run.total }}</td><td class="num">{% if run.cost_usd is not None %}{{ run.cost_usd|floatformat:4 }}{% else %}—{% endif %}</td><td class="num">{% if run.latency_ms %}{{ run.latency_ms }} ms{% else %}—{% endif %}</td><td>{{ run.created_at|date:"SHORT_DATETIME_FORMAT" }}</td></tr>
         {% empty %}
           <tr><td colspan="5">No runs yet. Try <code>manage.py llm_evaluate evals/</code>.</td></tr>
         {% endfor %}

@@ -124,19 +124,34 @@ def test_event_loop_stays_free_while_waiting():
     assert len(ticks) == 100  # the ticker was not frozen behind the 0.3 s call
 
 
+class RecordingSlowProvider(FakeProvider):
+    """Sleeps 0.3 s and records when each call waited, to check that waits overlap."""
+
+    windows = []
+
+    def complete(self, *args, **kwargs):
+        import time
+
+        began = time.perf_counter()
+        time.sleep(0.3)
+        RecordingSlowProvider.windows.append((began, time.perf_counter()))
+        return super().complete(*args, **kwargs)
+
+
 @pytest.mark.django_db(transaction=True)
 def test_concurrent_requests_do_not_queue_behind_each_other():
-    """Like two ASGI requests (each in its own context): two 0.3 s calls take ~0.3 s, not 0.6 s.
+    """Like two ASGI requests (each in its own context): both providers wait at the same time.
 
-    Run with asyncio.run, as an ASGI server does: under async_to_sync every thread-sensitive call
-    would go back to the test's own thread and queue up, which is not what happens in production.
+    Checked by overlapping waits, not total time, so a slow disk (the ledger writes) cannot make it
+    flaky. Run with asyncio.run, as an ASGI server does: under async_to_sync every thread-sensitive
+    call would go back to the test's own thread and queue up, which is not what happens in production.
     """
     import asyncio
-    import time
 
     from asgiref.sync import ThreadSensitiveContext
 
-    client = LLMClient([SlowProvider(reply="slow")])
+    RecordingSlowProvider.windows = []
+    client = LLMClient([RecordingSlowProvider(reply="slow")])
 
     async def request(n):
         async with ThreadSensitiveContext():
@@ -148,10 +163,9 @@ def test_concurrent_requests_do_not_queue_behind_each_other():
                 await sync_to_async(connections.close_all)()
 
     async def body():
-        started = time.perf_counter()
         await asyncio.gather(request(1), request(2))
-        return time.perf_counter() - started
 
-    elapsed = asyncio.run(body())
-    assert elapsed < 0.55
+    asyncio.run(body())
+    (start_a, end_a), (start_b, end_b) = sorted(RecordingSlowProvider.windows)
+    assert start_b < end_a, "the second call only started waiting after the first one finished"
     assert LLMCall.objects.filter(status="ok").count() == 2

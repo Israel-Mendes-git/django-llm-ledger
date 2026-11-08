@@ -120,6 +120,25 @@ store-support  (evals/store-support.yaml)
   cost $0.0042, 3120 tokens, 4120 ms per case
 ```
 
+To compare models, pin each run to one of them (no fallback) and get a table at the end:
+
+```bash
+python manage.py llm_evaluate evals/ --models ollama:qwen2.5:1.5b,ollama:qwen2.5:0.5b
+```
+
+```text
+Comparison
+  model                suite          score  cost (USD)  tokens  ms/case
+  -------------------  -------------  -----  ----------  ------  -------
+  ollama:qwen2.5:1.5b  store-support  11/11     $0.0000    2093     7244
+  ollama:qwen2.5:0.5b  store-support  10/11     $0.0000    2178     6070
+```
+
+That is a real run on the demo store: the smaller model was only 16% faster, and it answered
+"Yes, we do sell green tea", for a coffee shop that sells no tea. Pinned runs reuse the settings of
+the configured provider with the same name (API key, `base_url`, `model_options`), and target
+functions are pinned too. Evaluations never use the cache: they measure the model as it answers now.
+
 Each run also adds up what it cost, reading the ledger rows written while each case ran, so it
 works for `target` functions that make several calls. Runs are stored and show up in the dashboard
 with score, cost and time side by side: swap a model, rerun the suite, compare.

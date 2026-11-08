@@ -46,8 +46,8 @@ class LLMCallAdmin(ReadOnlyAdmin):
 
 @admin.register(EvalRun)
 class EvalRunAdmin(ReadOnlyAdmin):
-    list_display = ("created_at", "suite", "passed", "total", "score_pct", "cost_usd", "tokens", "latency_ms")
-    list_filter = ("suite",)
+    list_display = ("created_at", "suite", "model", "passed", "total", "score_pct", "cost_usd", "tokens", "latency_ms")
+    list_filter = ("suite", "model")
 
     @admin.display(description="score")
     def score_pct(self, obj):

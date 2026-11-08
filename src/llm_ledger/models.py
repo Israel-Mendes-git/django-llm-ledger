@@ -53,10 +53,13 @@ class EvalRun(models.Model):
                                    help_text="Sum of the ledger calls made while running the suite.")
     tokens = models.PositiveIntegerField(default=0)
     latency_ms = models.PositiveIntegerField(default=0, help_text="Average time per case.")
+    model = models.CharField(max_length=150, blank=True,
+                             help_text="Set when the run was pinned to one model (llm_evaluate --models).")
 
     class Meta:
         ordering = ["-created_at"]
         verbose_name = "evaluation run"
 
     def __str__(self):
-        return f"{self.suite}: {self.passed}/{self.total}"
+        label = f"{self.suite} [{self.model}]" if self.model else self.suite
+        return f"{label}: {self.passed}/{self.total}"

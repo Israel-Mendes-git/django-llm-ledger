@@ -23,6 +23,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from django.test.utils import override_settings
 from django.utils.module_loading import import_string
 
 
@@ -135,7 +136,45 @@ def _last_call_id():
     return LLMCall.objects.order_by("-id").values_list("id", flat=True).first() or 0
 
 
-def run_suite(suite, *, client=None, save=True):
+def parse_model(spec):
+    """``"ollama:qwen2.5:1.5b"`` -> ``{"name": "ollama", "model": "qwen2.5:1.5b"}``.
+
+    Only the first colon separates provider and model, since model names often contain colons.
+    """
+    name, sep, model = spec.strip().partition(":")
+    if not sep or not name or not model:
+        raise SuiteError(f"--models expects provider:model, got {spec!r}")
+    return {"name": name, "model": model}
+
+
+def _settings_for(model):
+    """LLM_LEDGER for an eval run: never the cache, and optionally a single pinned model."""
+    from django.conf import settings
+
+    values = {**(getattr(settings, "LLM_LEDGER", {}) or {}), "CACHE_TTL": 0}
+    if model is not None:
+        # Reuse the settings of a configured provider (api_key_env, base_url, model_options...):
+        # the same provider and model if there is one, otherwise the same provider.
+        same_name = [dict(p) for p in values.get("PROVIDERS", [])
+                     if isinstance(p, dict) and p.get("name") == model["name"]]
+        exact = [p for p in same_name if p.get("model") == model["model"]]
+        configured = (exact or same_name or [{}])[0]
+        values["PROVIDERS"] = [{**configured, **model}]
+    return values
+
+
+def run_suite(suite, *, client=None, save=True, model=None):
+    """Run every case and return an EvalReport.
+
+    The cache is always skipped: an evaluation measures the model as it answers now, and a cached
+    answer would report a stale text at zero cost. ``model`` (a ``{"name", "model"}`` dict) pins the
+    whole run, target functions included, to that one provider with no fallback.
+    """
+    with override_settings(LLM_LEDGER=_settings_for(model)):
+        return _run_suite(suite, client=client, save=save, model=model)
+
+
+def _run_suite(suite, *, client, save, model):
     from .client import LLMError, llm
 
     client = client or llm
@@ -173,5 +212,6 @@ def run_suite(suite, *, client=None, save=True):
             cost_usd=report.cost_usd,
             tokens=report.tokens,
             latency_ms=report.avg_latency_ms,
+            model=f"{model['name']}:{model['model']}" if model else "",
         )
     return report
