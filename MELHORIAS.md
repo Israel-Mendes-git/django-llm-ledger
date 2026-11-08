@@ -15,9 +15,9 @@
 ## Próximo
 1. Busca da loja: corte de fontes fracas feito (15 de 16 perguntas trazem só a seção certa; "Japão" ainda cita "Boleto"). Próximo nível é embeddings.
 2. Streaming de resposta (o chat da demo vai precisar).
-4. Medir custo também nas avaliações e mostrar nota + custo lado a lado.
-5. GitHub Actions rodando testes e uma suíte de exemplo.
-6. Publicar no PyPI; README com GIF; post explicando as decisões.
+3. Medir custo também nas avaliações e mostrar nota + custo lado a lado.
+4. GitHub Actions rodando testes e uma suíte de exemplo.
+5. Publicar no PyPI; README com GIF; post explicando as decisões.
 
 ## Decisões pendentes (dele)
 - Nome final (`django-llm-ledger` está livre no PyPI em 07/11/2026).
