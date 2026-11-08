@@ -17,9 +17,10 @@
 
 - Streaming: `llm.stream()` nos 3 provedores, plano B só antes da primeira palavra; chat da loja escreve a resposta aos poucos (08/11/2026).
 
+- Busca da loja por embeddings (`all-minilm`, 46 MB) com busca por palavra como reserva; "Japão" agora cita "Where we ship" e perguntas sem palavra em comum acham a seção (08/11/2026). Ainda erra "How do I talk to someone?" (não acha Contact).
+
 ## Próximo
-1. Busca da loja: corte de fontes fracas feito (15 de 16 perguntas trazem só a seção certa; "Japão" ainda cita "Boleto"). Próximo nível é embeddings.
-2. Publicar no PyPI; README com GIF; post explicando as decisões.
+1. Publicar no PyPI; README com GIF; post explicando as decisões.
 
 ## Decisões pendentes (dele)
 - Nome final (`django-llm-ledger` está livre no PyPI em 07/11/2026).

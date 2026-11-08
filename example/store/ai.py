@@ -1,22 +1,35 @@
 """The store's support assistant: retrieve the relevant help sections, ask the LLM, cite sources.
 
-Retrieval here is a small keyword scorer (TF-IDF style) over Markdown sections, enough for a
-help center with a few dozen sections and with zero extra dependencies. Swap in embeddings
-(pgvector, etc.) when the documents grow.
+Retrieval compares embeddings from a small local model (all-minilm through Ollama, 46 MB) so
+"Can I get my money back?" finds "Refund timing" without sharing a word with it. With a few dozen
+sections the vectors live in memory; use pgvector or similar when the documents grow. If Ollama
+is not reachable, a keyword scorer (TF-IDF style) takes over.
 """
 
+import logging
 import math
+import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+import httpx
+
 from llm_ledger import LLMClient, llm
 from llm_ledger.providers import OllamaProvider, build_provider
 from llm_ledger import conf
 
+logger = logging.getLogger(__name__)
+
 DOCS_DIR = Path(__file__).resolve().parent / "docs"
 TOP_K = 3
+EMBED_MODEL = os.environ.get("DEMO_EMBED_MODEL", "all-minilm")
+OLLAMA_URL = os.environ.get("DEMO_OLLAMA_URL", "http://localhost:11434")
+# Cosine similarity: below MIN_SIMILARITY a section is unrelated (off-topic questions score
+# under 0.25 with all-minilm); sections further than MAX_GAP from the best one are dropped.
+MIN_SIMILARITY = 0.35
+MAX_GAP = 0.08
 # Drop sections scoring below this share of the best match, so weak keyword overlaps
 # ("ships" in the boleto section) do not show up as sources.
 RELATIVE_CUTOFF = 0.6
@@ -85,7 +98,45 @@ def _index():
     return sections, docs, idf
 
 
+def _embed(texts):
+    response = httpx.post(f"{OLLAMA_URL}/api/embed", json={"model": EMBED_MODEL, "input": texts}, timeout=30)
+    response.raise_for_status()
+    return response.json()["embeddings"]
+
+
+def _cosine(a, b):
+    dot = sum(x * y for x, y in zip(a, b))
+    return dot / (math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b)))
+
+
+_section_vectors = None
+
+
+def _vectors():
+    """Embed every section once per process. Failures are not cached, so Ollama can come back."""
+    global _section_vectors
+    if _section_vectors is None:
+        _section_vectors = _embed([f"{s.doc} - {s.title}: {s.text}" for s in load_sections()])
+    return _section_vectors
+
+
 def retrieve(question, k=TOP_K):
+    """The help sections that answer the question, best first (may be empty)."""
+    try:
+        vectors = _vectors()
+        query = _embed([question])[0]
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        logger.warning("Embeddings unavailable (%s); using keyword search.", exc)
+        return retrieve_keywords(question, k)
+    scored = sorted(((_cosine(query, v), s) for v, s in zip(vectors, load_sections())),
+                    key=lambda pair: pair[0], reverse=True)
+    if not scored or scored[0][0] < MIN_SIMILARITY:
+        return []
+    best = scored[0][0]
+    return [s for score, s in scored[:k] if score >= MIN_SIMILARITY and best - score <= MAX_GAP]
+
+
+def retrieve_keywords(question, k=TOP_K):
     sections, docs, idf = _index()
     query = {stem(t) for t in tokens(question)}
     scored = []
