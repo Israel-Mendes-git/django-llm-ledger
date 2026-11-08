@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `manage.py llm_ledger_prune`: delete old calls (`--days`) or only their prompt/response text
+  (`--texts-older-than`), in batches, with `--dry-run`. Defaults from `RETENTION_DAYS` and
+  `TEXT_RETENTION_DAYS`.
 - Conversations: `complete`, `stream`, `acomplete` and `astream` accept a list of
   `{"role": "user" | "assistant", "content": ...}` messages. Evaluation cases accept them as `input`.
 - `llm_evaluate --models provider:model,...` runs the suites once per model, with no fallback, and

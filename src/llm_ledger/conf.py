@@ -28,6 +28,10 @@ DEFAULTS = {
     "LOCAL_CURRENCY": None,  # e.g. {"code": "BRL", "rate": 5.4}
     # Store prompt and response text. Off by default: prompts often carry personal data.
     "STORE_PROMPTS": False,
+    # Defaults for `manage.py llm_ledger_prune`: delete calls older than RETENTION_DAYS, and blank
+    # the prompt/response of calls older than TEXT_RETENTION_DAYS (costs stay). None = keep.
+    "RETENTION_DAYS": None,
+    "TEXT_RETENTION_DAYS": None,
 }
 
 

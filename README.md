@@ -81,6 +81,8 @@ The dashboard lives at **Admin → LLM calls → Cost dashboard**.
 | `MONTHLY_BUDGET_USD` | `None` | Sends `budget_exceeded` when reached. |
 | `FEATURE_BUDGETS_USD` | `{}` | Monthly limit per feature, e.g. `{"support_chat": 20}`. Shown in the dashboard; a bar turns amber at 80%. |
 | `BLOCK_OVER_BUDGET` | `False` | Raise `BudgetExceeded` instead of just signalling. With feature budgets, only the feature over its limit is blocked. |
+| `RETENTION_DAYS` | `None` | Default for `llm_ledger_prune`: delete calls older than this. |
+| `TEXT_RETENTION_DAYS` | `None` | Default for `llm_ledger_prune`: blank prompts and responses older than this; costs stay. |
 | `LOCAL_CURRENCY` | `None` | `{"code": "BRL", "rate": 5.4}` to show a second currency. |
 | `STORE_PROMPTS` | `False` | Store prompt and response text in the ledger. |
 
@@ -217,6 +219,20 @@ is written with the ORM, which is synchronous, and one code path means the two A
 apart. While a provider answers, the event loop stays free and other requests are served. The
 test suite checks both: a coroutine keeps running during a slow call, and two concurrent requests
 take about as long as one.
+
+## Keeping the ledger small (and LGPD/GDPR-friendly)
+
+The ledger keeps every call until you say otherwise. Prune it from a daily cron job:
+
+```bash
+python manage.py llm_ledger_prune --texts-older-than 30 --days 365
+python manage.py llm_ledger_prune --dry-run --days 365     # only count
+```
+
+`--texts-older-than` blanks the prompt and response but keeps the row, so the dashboard and cost
+history stay intact while personal data does not linger. Set `TEXT_RETENTION_DAYS` and
+`RETENTION_DAYS` in `LLM_LEDGER` and the command needs no arguments. Rows are processed in batches,
+so a large table is not locked at once.
 
 ## Handling failures in your code
 
