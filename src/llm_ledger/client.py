@@ -147,6 +147,35 @@ class AsyncLLMStream:
         await self.aclose()
 
 
+ROLES = ("user", "assistant")
+
+
+def _normalize(prompt):
+    """Accept a string or a conversation; return (messages, text for the ledger).
+
+    A conversation is a list of {"role": "user" | "assistant", "content": str} ending with the
+    user's turn. The system prompt goes in ``system=``, not in the list, because providers place
+    it differently.
+    """
+    if isinstance(prompt, str):
+        return [{"role": "user", "content": prompt}], prompt
+    if not isinstance(prompt, (list, tuple)) or not prompt:
+        raise ValueError("prompt must be a string or a non-empty list of messages")
+    messages = []
+    for index, message in enumerate(prompt):
+        role, content = (message or {}).get("role"), (message or {}).get("content")
+        if role == "system":
+            raise ValueError("pass the system prompt as system=..., not as a message")
+        if role not in ROLES or not isinstance(content, str):
+            raise ValueError(f"message {index} needs role 'user' or 'assistant' and text content")
+        messages.append({"role": role, "content": content})
+    if messages[-1]["role"] != "user":
+        raise ValueError("the last message must be the user's")
+    if len(messages) == 1:
+        return messages, messages[0]["content"]
+    return messages, "\n\n".join(f"{m['role']}: {m['content']}" for m in messages)
+
+
 def month_spend(feature=None):
     """Spend since the first day of the month, for every feature or for one."""
     from .models import LLMCall
@@ -188,7 +217,8 @@ class LLMClient:
         temperature=0.0,
         use_cache=True,
     ):
-        call = self._prepare(prompt, feature, user, system, max_tokens, temperature, use_cache)
+        messages, prompt = _normalize(prompt)
+        call = self._prepare(prompt, messages, feature, user, system, max_tokens, temperature, use_cache)
         if isinstance(call, LLMResult):
             return call
         chain, common, cache, ttl, messages = call
@@ -271,7 +301,8 @@ class LLMClient:
         Budget and cache are checked right away, so ``BudgetExceeded`` is raised here and not
         in the middle of the loop. A cache hit yields the whole answer as a single chunk.
         """
-        call = self._prepare(prompt, feature, user, system, max_tokens, temperature, use_cache)
+        messages, prompt = _normalize(prompt)
+        call = self._prepare(prompt, messages, feature, user, system, max_tokens, temperature, use_cache)
         if isinstance(call, LLMResult):
             def replay(holder):
                 holder.result = call
@@ -349,7 +380,7 @@ class LLMClient:
 
     # ----------------------------------------------------------------- helpers
 
-    def _prepare(self, prompt, feature, user, system, max_tokens, temperature, use_cache):
+    def _prepare(self, prompt, messages, feature, user, system, max_tokens, temperature, use_cache):
         """Shared start of complete/stream: chain, ledger fields, budget and cache.
 
         Returns an ``LLMResult`` on a cache hit, otherwise (chain, common, cache, ttl, messages).
@@ -359,8 +390,7 @@ class LLMClient:
             raise LLMError("No providers configured (LLM_LEDGER['PROVIDERS'] is empty).")
 
         request_id = uuid.uuid4()
-        messages = [{"role": "user", "content": prompt}]
-        prompt_hash = self._hash(chain, system, prompt, max_tokens, temperature)
+        prompt_hash = self._hash(chain, system, messages, max_tokens, temperature)
         user = user if getattr(user, "is_authenticated", False) else None
         common = {"request_id": request_id, "feature": feature, "user": user, "prompt_hash": prompt_hash}
 
@@ -378,9 +408,9 @@ class LLMClient:
         return chain, common, cache, ttl, messages
 
     @staticmethod
-    def _hash(chain, system, prompt, max_tokens, temperature):
+    def _hash(chain, system, messages, max_tokens, temperature):
         key = json.dumps(
-            [[p.label for p in chain], system, prompt, max_tokens, temperature], ensure_ascii=False
+            [[p.label for p in chain], system, messages, max_tokens, temperature], ensure_ascii=False
         )
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
 

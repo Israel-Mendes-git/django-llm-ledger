@@ -176,3 +176,21 @@ def test_models_option_reuses_the_provider_settings_for_other_models(ledger):
                       {"name": "ollama", "model": "qwen2.5:1.5b", "model_options": {"num_gpu": 0}}])
     pinned = _settings_for({"name": "ollama", "model": "qwen2.5:0.5b"})["PROVIDERS"]
     assert pinned == [{"name": "ollama", "model": "qwen2.5:0.5b", "model_options": {"num_gpu": 0}}]
+
+
+def test_case_input_can_be_a_conversation(tmp_path, ledger):
+    from llm_ledger.models import LLMCall
+
+    ledger(PROVIDERS=[{"name": "fake", "model": "fake", "reply": "EUR 15, calculated at checkout"}], STORE_PROMPTS=True)
+    path = write(tmp_path, "followup.json", {"name": "followup", "cases": [{
+        "id": "portugal",
+        "input": [
+            {"role": "user", "content": "How much is shipping?"},
+            {"role": "assistant", "content": "R$ 19.90."},
+            {"role": "user", "content": "And to Portugal?"},
+        ],
+        "must_contain": ["checkout"],
+    }]})
+    call_command("llm_evaluate", str(path))
+    assert EvalRun.objects.get().score == 1.0
+    assert LLMCall.objects.get().prompt.endswith("user: And to Portugal?")

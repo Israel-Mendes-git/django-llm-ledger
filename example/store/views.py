@@ -70,7 +70,8 @@ def ask(request):
 
     try:
         stream, sections = ai.answer_stream(
-            question, user=request.user, simulate_outage=bool(body.get("simulate_outage")))
+            question, user=request.user, simulate_outage=bool(body.get("simulate_outage")),
+            history=body.get("history"))
     except LLMError as exc:  # over budget
         return JsonResponse({"error": str(exc)}, status=503)
 

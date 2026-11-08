@@ -31,8 +31,9 @@ class FakeProvider(Provider):
             text = self.reply[min(self.calls - self.fail_times, len(self.reply)) - 1]
         else:
             text = self.reply
-        # Rough token estimate: 1 token ~ 4 characters.
-        return Completion(text, max(1, len(prompt) // 4), max(1, len(text) // 4))
+        # Rough token estimate: 1 token ~ 4 characters, over the whole conversation.
+        sent = sum(len(m["content"]) for m in messages) + len(system or "")
+        return Completion(text, max(1, sent // 4), max(1, len(text) // 4))
 
     def stream(self, messages, *, system=None, max_tokens=1024, temperature=0.0):
         """Yield the reply word by word; ``fail_mid_stream`` breaks after the first word."""

@@ -41,9 +41,33 @@ cases:
 
   - id: unknown-tea
     input: Do you sell green tea?
-    any_of: ["don't know", "do not know", "not sure", "human", "only coffee", "coffee"]
+    any_of: ["don't know", "do not know", "not sure", "don't have information", "no information", "human", "only coffee", "coffee"]
     must_not_contain: ["we sell green tea", "yes, we sell", "we do sell", "our range includes"]
 
   - id: talk-to-someone
     input: How do I talk to someone?
     any_of: ["help@serraverde.example", "whatsapp", "talk to a human"]
+
+  # Follow-ups: the earlier turns are part of the input. The Brazil rule must not leak into Portugal.
+  - id: followup-portugal-cost
+    input:
+      - {role: user, content: "How much is shipping?"}
+      - {role: assistant, content: "Shipping is free in Brazil for orders above R$ 150. Below that, it costs R$ 19.90 flat."}
+      - {role: user, content: "And to Portugal?"}
+    any_of: ["checkout", "calculated"]
+    must_not_contain: ["19.90"]
+
+  - id: followup-portugal-time
+    input:
+      - {role: user, content: "Do you ship to Portugal?"}
+      - {role: assistant, content: "Yes, we ship to Portugal."}
+      - {role: user, content: "How long does it take to get there?"}
+    any_of: ["10 to 20", "10-20", "10 and 20"]
+
+  - id: followup-topic-switch
+    input:
+      - {role: user, content: "How much is shipping?"}
+      - {role: assistant, content: "Shipping is free in Brazil for orders above R$ 150. Below that, it costs R$ 19.90 flat."}
+      - {role: user, content: "Do you sell green tea?"}
+    any_of: ["don't know", "do not know", "not sure", "don't have information", "no information", "human", "only coffee", "coffee"]
+    must_not_contain: ["we sell green tea", "yes, we sell", "we do sell", "our range includes"]

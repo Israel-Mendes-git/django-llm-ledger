@@ -143,6 +143,26 @@ Each run also adds up what it cost, reading the ledger rows written while each c
 works for `target` functions that make several calls. Runs are stored and show up in the dashboard
 with score, cost and time side by side: swap a model, rerun the suite, compare.
 
+## Conversations
+
+Pass the conversation instead of a single string. The system prompt stays in `system=`:
+
+```python
+answer = llm.complete(
+    [
+        {"role": "user", "content": "How much is shipping?"},
+        {"role": "assistant", "content": "R$ 19.90, free above R$ 150."},
+        {"role": "user", "content": "And to Portugal?"},
+    ],
+    system="You answer for ACME Store.",
+    feature="support",
+)
+```
+
+It works the same with `stream`, `acomplete` and `astream`. The ledger stores the conversation as a
+readable transcript (when `STORE_PROMPTS` is on), and the cache tells conversations apart. In an
+evaluation suite, a case's `input` can be a conversation too, which is how you test follow-ups.
+
 ## Streaming
 
 ```python

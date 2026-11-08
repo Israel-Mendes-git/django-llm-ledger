@@ -164,6 +164,7 @@
 const $ = (id) => document.getElementById(id);
 const csrf = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || "";
 let lastQuestion = "";
+const history = [];  // the conversation so far, sent with each question
 let busy = false;
 
 function add(cls, text) {
@@ -220,6 +221,7 @@ async function ask(question) {
       text.textContent += event.text;
       $("messages").scrollTop = $("messages").scrollHeight;
     } else if (event.type === "done") {
+      history.push({role: "user", content: question}, {role: "assistant", content: text.textContent});
       if (!started) { msg.textContent = ""; msg.className = "msg bot"; }
       if (event.sources.length) {
         const src = document.createElement("div");
@@ -238,7 +240,7 @@ async function ask(question) {
     const res = await fetch("/ask/", {
       method: "POST",
       headers: {"Content-Type": "application/json", "X-CSRFToken": csrf},
-      body: JSON.stringify({question, simulate_outage: $("outage").checked}),
+      body: JSON.stringify({question, history: history.slice(-6), simulate_outage: $("outage").checked}),
     });
     if (!res.ok) {
       msg.remove();

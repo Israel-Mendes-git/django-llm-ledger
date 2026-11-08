@@ -30,6 +30,12 @@ OLLAMA_URL = os.environ.get("DEMO_OLLAMA_URL", "http://localhost:11434")
 # under 0.25 with all-minilm); sections further than MAX_GAP from the best one are dropped.
 MIN_SIMILARITY = 0.35
 MAX_GAP = 0.08
+# Follow-ups search twice (alone and with the previous question). The combined query leans toward
+# the earlier topic, so the section the new detail needs scores further below the best one.
+FOLLOWUP_MAX_GAP = 0.15
+# ...but only when the question on its own is at least loosely about the help center. Otherwise a
+# change of subject ("Do you sell tea?" after shipping) would drag the old topic's sections along.
+FOLLOWUP_MIN_SIMILARITY = 0.30
 # Drop sections scoring below this share of the best match, so weak keyword overlaps
 # ("ships" in the boleto section) do not show up as sources.
 RELATIVE_CUTOFF = 0.6
@@ -38,7 +44,9 @@ SYSTEM_PROMPT = """You are the customer support assistant of Serra Verde Coffee 
 Answer ONLY with information from the numbered help sections provided. Be short and friendly (2 to 4 sentences).
 Cite the sections you used like [1] or [2].
 If the sections do not contain the answer, say you don't know and suggest using the "Talk to a human" button.
-Never invent prices, dates, policies or promises."""
+Never invent prices, dates, policies or promises.
+A rule in a section applies only to the cases it names: a price or deadline for Brazil does not apply to other countries.
+Earlier answers in the conversation may be about a different case, so check the sections again for the latest question."""
 
 STOPWORDS = set("""
 a an and are as at be by can do does for from have how i if in is it its my of on or our the their
@@ -120,20 +128,36 @@ def _vectors():
     return _section_vectors
 
 
-def retrieve(question, k=TOP_K):
-    """The help sections that answer the question, best first (may be empty)."""
+def _scored(queries):
+    """Every section with its best similarity over the queries, best first."""
+    vectors = _vectors()
+    best = {}
+    for query in _embed(list(queries)):
+        for vector, section in zip(vectors, load_sections()):
+            score = _cosine(query, vector)
+            if score > best.get(section.label, (0, None))[0]:
+                best[section.label] = (score, section)
+    return sorted(best.values(), key=lambda pair: pair[0], reverse=True)
+
+
+def retrieve(question, k=TOP_K, *, previous=None):
+    """The help sections that answer the question, best first (may be empty).
+
+    ``previous`` is the user's earlier question in the conversation, for follow-ups.
+    """
     try:
-        vectors = _vectors()
-        query = _embed([question])[0]
+        scored = _scored([question])
+        if previous and scored and scored[0][0] >= FOLLOWUP_MIN_SIMILARITY:
+            scored = _scored([question, f"{previous} {question}"])
+        else:
+            previous = None
     except (httpx.HTTPError, KeyError, ValueError) as exc:
         logger.warning("Embeddings unavailable (%s); using keyword search.", exc)
         return retrieve_keywords(question, k)
-    scored = sorted(((_cosine(query, v), s) for v, s in zip(vectors, load_sections())),
-                    key=lambda pair: pair[0], reverse=True)
     if not scored or scored[0][0] < MIN_SIMILARITY:
         return []
-    best = scored[0][0]
-    return [s for score, s in scored[:k] if score >= MIN_SIMILARITY and best - score <= MAX_GAP]
+    best, gap = scored[0][0], (FOLLOWUP_MAX_GAP if previous else MAX_GAP)
+    return [s for score, s in scored[:k] if score >= MIN_SIMILARITY and best - score <= gap]
 
 
 def retrieve_keywords(question, k=TOP_K):
@@ -155,7 +179,7 @@ def build_prompt(question, sections):
     if sections:
         context = "\n\n".join(f"[{i}] {s.label}\n{s.text}" for i, s in enumerate(sections, 1))
     else:
-        context = "(no relevant help sections found)"
+        context = "(No help section covers this question. Say you don't know and suggest the \"Talk to a human\" button.)"
     return f"Help sections:\n\n{context}\n\nCustomer question: {question}"
 
 
@@ -180,11 +204,42 @@ def answer(question, *, user=None, simulate_outage=False):
     return result, sections
 
 
-def answer_stream(question, *, user=None, simulate_outage=False):
-    """Same as ``answer`` but returns an LLMStream; iterate it for the text as it is written."""
-    sections = retrieve(question)
+HISTORY_TURNS = 6  # messages of earlier conversation sent along (3 questions and 3 answers)
+
+
+def clean_history(history):
+    """Keep the last few well-formed turns from the browser, trimmed, starting with a question."""
+    turns = [
+        {"role": m["role"], "content": m["content"][:1000]}
+        for m in (history or [])
+        if isinstance(m, dict) and m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str)
+    ][-HISTORY_TURNS:]
+    while turns and turns[0]["role"] != "user":
+        turns.pop(0)
+    return turns
+
+
+def conversation(question, sections, history):
+    """Earlier turns as they were, then this question with the help sections attached.
+
+    Only the current turn carries sections, so earlier answers are not re-grounded on documents
+    picked for a different question.
+    """
+    return [*history, {"role": "user", "content": build_prompt(question, sections)}]
+
+
+def answer_stream(question, *, user=None, simulate_outage=False, history=None):
+    """Same as ``answer`` but returns an LLMStream; iterate it for the text as it is written.
+
+    ``history`` is the conversation so far. Retrieval also looks at the previous question, so a
+    follow-up like "And to Portugal?" still finds the shipping sections.
+    """
+    history = clean_history(history)
+    previous = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
+    # A follow-up often names only the new detail; the previous question carries the topic.
+    sections = retrieve(question, previous=previous or None)
     stream = client_for(simulate_outage).stream(
-        build_prompt(question, sections),
+        conversation(question, sections, history),
         system=SYSTEM_PROMPT,
         feature="support_chat",
         user=user,
@@ -195,6 +250,10 @@ def answer_stream(question, *, user=None, simulate_outage=False):
 
 
 def answer_text(question):
-    """Entry point for evaluation suites: question in, answer text out."""
+    """Entry point for evaluation suites: a question, or a conversation ending in one, in; text out."""
+    if isinstance(question, list):
+        *history, last = question
+        stream, _ = answer_stream(last["content"], history=history)
+        return "".join(stream)
     result, _ = answer(question)
     return result.text

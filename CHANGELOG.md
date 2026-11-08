@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Conversations: `complete`, `stream`, `acomplete` and `astream` accept a list of
+  `{"role": "user" | "assistant", "content": ...}` messages. Evaluation cases accept them as `input`.
 - `llm_evaluate --models provider:model,...` runs the suites once per model, with no fallback, and
   prints a comparison table. Runs record the model and the dashboard shows it.
 - Evaluations no longer use the cache, so a stored answer cannot stand in for the model being tested.
