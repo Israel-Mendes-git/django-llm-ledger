@@ -58,7 +58,7 @@ def ask(request):
     return JsonResponse(
         {
             "answer": result.text,
-            "sources": [s.label for s in sections],
+            "sources": [] if result.provider == "fake" else [s.label for s in sections],
             "meta": {
                 "provider": result.provider,
                 "model": result.model,

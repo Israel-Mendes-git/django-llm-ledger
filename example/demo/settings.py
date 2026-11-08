@@ -51,7 +51,11 @@ OLLAMA_MODEL = os.environ.get("DEMO_OLLAMA_MODEL", "qwen2.5:3b")
 providers = []
 if os.environ.get("ANTHROPIC_API_KEY"):
     providers.append({"name": "anthropic", "model": os.environ.get("DEMO_ANTHROPIC_MODEL", "claude-haiku-5-5")})
-providers.append({"name": "ollama", "model": OLLAMA_MODEL})
+ollama = {"name": "ollama", "model": OLLAMA_MODEL}
+if os.environ.get("DEMO_OLLAMA_CPU", "1") == "1":
+    # On this machine the integrated GPU is far slower than the CPU for small models.
+    ollama["model_options"] = {"num_gpu": 0}
+providers.append(ollama)
 # Last resort so the demo never shows a stack trace.
 providers.append({"name": "fake", "model": "offline-notice",
                   "reply": "The assistant is offline right now. Please use 'Talk to a human' below."})

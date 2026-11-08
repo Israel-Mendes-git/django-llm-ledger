@@ -117,7 +117,7 @@ def answer(question, *, user=None, simulate_outage=False):
         system=SYSTEM_PROMPT,
         feature="support_chat",
         user=user,
-        max_tokens=300,
+        max_tokens=200,
         use_cache=not simulate_outage,
     )
     return result, sections

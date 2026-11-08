@@ -4,6 +4,7 @@ import os
 
 import httpx
 
+from .. import conf
 from .base import Completion, Provider, ProviderError, error_from_status
 
 
@@ -28,7 +29,7 @@ class HTTPProvider(Provider):
 
     def _post(self, path, payload, headers=None):
         try:
-            with httpx.Client(timeout=self.timeout or 60, transport=self.transport) as client:
+            with httpx.Client(timeout=self.timeout or conf.get("TIMEOUT"), transport=self.transport) as client:
                 response = client.post(f"{self.base_url}{path}", json=payload, headers=headers or {})
         except httpx.TimeoutException as exc:
             raise ProviderError(f"timeout: {exc}", retryable=True) from exc
@@ -47,6 +48,11 @@ class OllamaProvider(HTTPProvider):
     is_local = True
     default_base_url = "http://localhost:11434"
 
+    def __init__(self, model, *, model_options=None, **kwargs):
+        """``model_options`` go straight to Ollama's "options", e.g. {"num_gpu": 0} to run on CPU."""
+        super().__init__(model, **kwargs)
+        self.model_options = model_options or {}
+
     def complete(self, messages, *, system=None, max_tokens=1024, temperature=0.0):
         chat = ([{"role": "system", "content": system}] if system else []) + list(messages)
         data = self._post(
@@ -55,7 +61,7 @@ class OllamaProvider(HTTPProvider):
                 "model": self.model,
                 "messages": chat,
                 "stream": False,
-                "options": {"num_predict": max_tokens, "temperature": temperature},
+                "options": {"num_predict": max_tokens, "temperature": temperature, **self.model_options},
             },
         )
         try:

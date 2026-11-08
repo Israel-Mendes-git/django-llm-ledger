@@ -92,3 +92,25 @@ def test_build_provider_from_settings_entry():
     assert provider.base_url == "http://box:11434"
     custom = build_provider({"name": "llm_ledger.providers.FakeProvider", "model": "z"})
     assert custom.model == "z"
+
+
+def test_ollama_model_options_are_passed_through():
+    seen = []
+    provider = OllamaProvider("m", model_options={"num_gpu": 0},
+                              transport=transport(body={"message": {"content": "x"}}, capture=seen))
+    provider.complete(MESSAGES)
+    assert json.loads(seen[0].content)["options"]["num_gpu"] == 0
+
+
+def test_global_timeout_setting_is_used(settings):
+    settings.LLM_LEDGER = {**settings.LLM_LEDGER, "TIMEOUT": 7}
+    captured = {}
+
+    def handler(request):
+        captured.update(request.extensions["timeout"])
+        return httpx.Response(200, json={"message": {"content": "x"}})
+
+    OllamaProvider("m", transport=httpx.MockTransport(handler)).complete(MESSAGES)
+    assert captured["read"] == 7
+    OllamaProvider("m", timeout=3, transport=httpx.MockTransport(handler)).complete(MESSAGES)
+    assert captured["read"] == 3
