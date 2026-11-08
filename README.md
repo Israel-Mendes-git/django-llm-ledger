@@ -15,6 +15,10 @@ answer = llm.complete(
 print(answer.text, answer.cost_usd, answer.latency_ms)
 ```
 
+![Demo store: the main provider is down, the call is retried twice and a local model answers](docs/images/demo-chat-fallback.png)
+
+![Cost dashboard in the Django admin](docs/images/admin-dashboard.png)
+
 ## What you get
 
 - **A ledger of every call**: provider, model, tokens, cost, latency, status, feature and user. Prompts are **not** stored unless you opt in, since they often carry personal data.

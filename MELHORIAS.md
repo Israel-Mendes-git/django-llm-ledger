@@ -13,9 +13,8 @@
 - Loja de demonstração em `example/` (Serra Verde Coffee): chat com fontes, painel de custo ao lado, simulação de queda do provedor. Prova de qualidade 10/10 com `qwen2.5:1.5b` local (07/11/2026). Capturas em `..\django-llm-ledger-shots\`.
 
 ## Próximo
-1. Fontes do chat: a busca por palavra às vezes traz seções sem relação (ex.: "Boleto" na pergunta sobre Portugal). Cortar resultados com pontuação baixa ou trocar por embeddings.
-2. Colocar as capturas no README.
-3. Streaming de resposta (o chat da demo vai precisar).
+1. Busca da loja: corte de fontes fracas feito (15 de 16 perguntas trazem só a seção certa; "Japão" ainda cita "Boleto"). Próximo nível é embeddings.
+2. Streaming de resposta (o chat da demo vai precisar).
 4. Medir custo também nas avaliações e mostrar nota + custo lado a lado.
 5. GitHub Actions rodando testes e uma suíte de exemplo.
 6. Publicar no PyPI; README com GIF; post explicando as decisões.

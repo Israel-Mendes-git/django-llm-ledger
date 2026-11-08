@@ -17,6 +17,9 @@ from llm_ledger import conf
 
 DOCS_DIR = Path(__file__).resolve().parent / "docs"
 TOP_K = 3
+# Drop sections scoring below this share of the best match, so weak keyword overlaps
+# ("ships" in the boleto section) do not show up as sources.
+RELATIVE_CUTOFF = 0.6
 
 SYSTEM_PROMPT = """You are the customer support assistant of Serra Verde Coffee Roasters, an online coffee shop.
 Answer ONLY with information from the numbered help sections provided. Be short and friendly (2 to 4 sentences).
@@ -26,7 +29,7 @@ Never invent prices, dates, policies or promises."""
 
 STOPWORDS = set("""
 a an and are as at be by can do does for from have how i if in is it its my of on or our the their
-this to we what when where which who will with you your yes not no any about after before into than
+this to we what when where which who will with you your yes not no any about after before into than there here
 """.split())
 
 
@@ -47,7 +50,7 @@ def tokens(text):
 
 def stem(word):
     # Crude plural folding so "returns" matches "return" and "bags" matches "bag".
-    return word[:-1] if len(word) > 4 and word.endswith("s") else word
+    return word[:-1] if len(word) > 3 and word.endswith("s") and not word.endswith("ss") else word
 
 
 @lru_cache(maxsize=1)
@@ -91,7 +94,10 @@ def retrieve(question, k=TOP_K):
         if score > 0:
             scored.append((score, section))
     scored.sort(key=lambda pair: pair[0], reverse=True)
-    return [section for _, section in scored[:k]]
+    if not scored:
+        return []
+    best = scored[0][0]
+    return [section for score, section in scored[:k] if score >= best * RELATIVE_CUTOFF]
 
 
 def build_prompt(question, sections):
