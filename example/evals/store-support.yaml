@@ -43,3 +43,7 @@ cases:
     input: Do you sell green tea?
     any_of: ["don't know", "do not know", "not sure", "human", "only coffee", "coffee"]
     must_not_contain: ["we sell green tea", "yes, we sell"]
+
+  - id: talk-to-someone
+    input: How do I talk to someone?
+    any_of: ["help@serraverde.example", "whatsapp", "talk to a human"]
