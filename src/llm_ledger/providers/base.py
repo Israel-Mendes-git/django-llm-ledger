@@ -40,6 +40,17 @@ class Provider:
         """Return a Completion or raise ProviderError."""
         raise NotImplementedError
 
+    def stream(self, messages, *, system=None, max_tokens=1024, temperature=0.0):
+        """Yield text chunks (``str``), then one final ``Completion`` with the full text and usage.
+
+        The default calls ``complete`` and yields the whole text at once, so every provider can be
+        used with ``llm.stream()``; providers with a real streaming API override this.
+        """
+        completion = self.complete(messages, system=system, max_tokens=max_tokens, temperature=temperature)
+        if completion.text:
+            yield completion.text
+        yield completion
+
     def __repr__(self):
         return f"<{type(self).__name__} {self.model}>"
 

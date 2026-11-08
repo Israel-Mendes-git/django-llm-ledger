@@ -113,7 +113,7 @@
   <aside class="panel">
     <div class="card intro">
       <h2>Behind the scenes</h2>
-      Every answer goes through <code>llm.complete()</code>, which logs cost, tokens and latency, retries
+      Every answer goes through <code>llm.stream()</code>, which logs cost, tokens and latency, retries
       failures and falls back to the next provider. This panel shows what the store owner sees.
     </div>
 
@@ -145,7 +145,7 @@
       {% if last_eval %}
         Last evaluation: <span class="score">{{ last_eval.passed }}/{{ last_eval.total }}</span> cases passed
         ({{ last_eval.created_at|date:"M j, H:i" }}){% if last_eval.latency_ms %}:
-        {% if last_eval.cost_usd is None %}free (local model){% else %}${{ last_eval.cost_usd|floatformat:4 }}{% endif %},
+        {% if not last_eval.cost_usd %}free (local model){% else %}${{ last_eval.cost_usd|floatformat:4 }}{% endif %},
         {{ last_eval.latency_ms }} ms per answer{% endif %}.
       {% else %}
         <span class="empty">No evaluation yet.</span>
@@ -189,7 +189,8 @@ function renderMeta(meta) {
   $("last").innerHTML = `
     <div class="stats">
       <div class="stat"><div class="k">Cost</div><div class="v">${money(meta.cost_usd)}</div></div>
-      <div class="stat"><div class="k">Latency</div><div class="v">${meta.latency_ms} ms</div></div>
+      <div class="stat"><div class="k">First words</div><div class="v">${meta.first_chunk_ms ?? meta.latency_ms} ms</div></div>
+      <div class="stat"><div class="k">Full answer</div><div class="v">${meta.total_ms ?? meta.latency_ms} ms</div></div>
       <div class="stat"><div class="k">Tokens</div><div class="v">${meta.input_tokens} → ${meta.output_tokens}</div></div>
     </div>
     <div class="badges"><span class="badge">${meta.provider}:${meta.model}</span>${badges.join("")}</div>
@@ -210,27 +211,57 @@ async function ask(question) {
   add("user", question);
   $("question").value = "";
   $("send").disabled = true;
-  const typing = add("bot typing", "Thinking…");
+  const msg = add("bot typing", "Thinking…");
+  const text = document.createElement("span");
+  let started = false;
+  const handle = (event) => {
+    if (event.type === "chunk") {
+      if (!started) { started = true; msg.textContent = ""; msg.className = "msg bot"; msg.appendChild(text); }
+      text.textContent += event.text;
+      $("messages").scrollTop = $("messages").scrollHeight;
+    } else if (event.type === "done") {
+      if (!started) { msg.textContent = ""; msg.className = "msg bot"; }
+      if (event.sources.length) {
+        const src = document.createElement("div");
+        src.className = "src";
+        src.textContent = "Sources: " + event.sources.map((s, i) => `[${i + 1}] ${s}`).join("  ·  ");
+        msg.appendChild(src);
+      }
+      renderMeta(event.meta);
+      renderTotals(event.totals);
+    } else if (event.type === "error") {
+      add("err", event.error);
+      renderTotals(event.totals);
+    }
+  };
   try {
     const res = await fetch("/ask/", {
       method: "POST",
       headers: {"Content-Type": "application/json", "X-CSRFToken": csrf},
       body: JSON.stringify({question, simulate_outage: $("outage").checked}),
     });
-    const data = await res.json();
-    typing.remove();
-    if (!res.ok) { add("err", data.error || "Something went wrong."); return; }
-    const msg = add("bot", data.answer);
-    if (data.sources.length) {
-      const src = document.createElement("div");
-      src.className = "src";
-      src.textContent = "Sources: " + data.sources.map((s, i) => `[${i + 1}] ${s}`).join("  ·  ");
-      msg.appendChild(src);
+    if (!res.ok) {
+      msg.remove();
+      const data = await res.json().catch(() => ({}));
+      add("err", data.error || "Something went wrong.");
+      return;
     }
-    renderMeta(data.meta);
-    renderTotals(data.totals);
+    // Newline-delimited JSON: split on newlines, keep the unfinished tail for the next read.
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const {value, done} = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, {stream: true});
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+      lines.filter(Boolean).forEach(line => handle(JSON.parse(line)));
+    }
+    if (buffer.trim()) handle(JSON.parse(buffer));
+    if (!started && msg.classList.contains("typing")) msg.remove();
   } catch (e) {
-    typing.remove();
+    if (!started) msg.remove();
     add("err", "Network error.");
   } finally {
     busy = false;

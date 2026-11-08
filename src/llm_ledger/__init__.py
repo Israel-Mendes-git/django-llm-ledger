@@ -6,7 +6,7 @@
 
 __version__ = "0.1.0"
 
-_LAZY = {"llm", "LLMClient", "LLMResult", "LLMError", "BudgetExceeded"}
+_LAZY = {"llm", "LLMClient", "LLMResult", "LLMStream", "LLMError", "BudgetExceeded"}
 
 
 def __getattr__(name):

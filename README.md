@@ -15,6 +15,8 @@ answer = llm.complete(
 print(answer.text, answer.cost_usd, answer.latency_ms)
 ```
 
+![Demo store streaming an answer from a local model](docs/images/demo-streaming.png)
+
 ![Demo store: the main provider is down, the call is retried twice and a local model answers](docs/images/demo-chat-fallback.png)
 
 ![Cost dashboard in the Django admin](docs/images/admin-dashboard.png)
@@ -24,6 +26,7 @@ print(answer.text, answer.cost_usd, answer.latency_ms)
 - **A ledger of every call**: provider, model, tokens, cost, latency, status, feature and user. Prompts are **not** stored unless you opt in, since they often carry personal data.
 - **A cost dashboard in the Django admin**: spend this month vs. budget, cost per day, top features, models and users, error rate, fallback count.
 - **Retries and fallback**: retryable errors (timeouts, 429, 5xx) are retried with exponential backoff; then the next provider in the chain takes over. Put a local model last and your feature keeps answering even when the paid API is down.
+- **Streaming**: `llm.stream()` yields the answer as it is written, with the same ledger, cache, retries and fallback.
 - **Cache**: identical requests are served from Django's cache and cost nothing.
 - **Budget guard**: a `budget_exceeded` signal when the monthly budget is reached, and optional hard blocking.
 - **Evaluation suites**: a file of questions plus what a good answer must (not) contain. `manage.py llm_evaluate` scores them and fails your CI when the score drops.
@@ -118,6 +121,34 @@ store-support  (evals/store-support.yaml)
 Each run also adds up what it cost, reading the ledger rows written while each case ran, so it
 works for `target` functions that make several calls. Runs are stored and show up in the dashboard
 with score, cost and time side by side: swap a model, rerun the suite, compare.
+
+## Streaming
+
+```python
+from django.http import StreamingHttpResponse
+from llm_ledger import llm
+
+def ask(request):
+    stream = llm.stream(request.POST["question"], feature="support", user=request.user)
+
+    def body():
+        with stream:          # if the browser leaves, the call is still recorded
+            yield from stream
+        # stream.result has cost, tokens, latency and first_chunk_ms once it ends
+
+    return StreamingHttpResponse(body(), content_type="text/plain")
+```
+
+Retries and fallback only happen **before the first chunk**. Once words have reached the reader,
+switching models would glue two different answers together, so a failure after that raises
+`LLMError` and the partial text stays in `stream.text`. Budget and cache are checked when you call
+`llm.stream()`, so `BudgetExceeded` is raised there, before you start the response. A cache hit
+comes back as a single chunk.
+
+Ollama, OpenAI-compatible servers and Anthropic stream natively. A custom provider without a
+`stream()` method still works: it yields the whole answer at once.
+
+The demo store streams its chat as newline-delimited JSON (`example/store/views.py`).
 
 ## Handling failures in your code
 

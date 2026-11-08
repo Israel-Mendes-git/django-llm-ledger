@@ -1,7 +1,8 @@
 import json
+import time
 
 from django.db.models import Count, Q, Sum
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -32,8 +33,33 @@ def home(request):
     return render(request, "store/home.html", {"last_eval": last_eval, "totals": _session_totals(request)})
 
 
+def _meta(result):
+    attempts = list(
+        LLMCall.objects.filter(request_id=result.request_id)
+        .order_by("id")
+        .values("provider", "model", "status", "attempt", "latency_ms", "error")
+    )
+    return {
+        "provider": result.provider,
+        "model": result.model,
+        "input_tokens": result.input_tokens,
+        "output_tokens": result.output_tokens,
+        "cost_usd": None if result.cost_usd is None else float(result.cost_usd),
+        "latency_ms": result.latency_ms,
+        "first_chunk_ms": result.first_chunk_ms,
+        "cached": result.cached,
+        "fallback_used": result.fallback_used,
+        "attempts": attempts,
+    }
+
+
+def _event(**data):
+    return json.dumps(data) + "\n"
+
+
 @require_POST
 def ask(request):
+    """Answer a question, streaming newline-delimited JSON: many "chunk" events, then "done"."""
     try:
         body = json.loads(request.body)
     except ValueError:
@@ -43,36 +69,40 @@ def ask(request):
         return JsonResponse({"error": "empty question"}, status=400)
 
     try:
-        result, sections = ai.answer(question, user=request.user, simulate_outage=bool(body.get("simulate_outage")))
-    except LLMError as exc:
-        return JsonResponse({"error": "All providers failed.", "details": exc.errors}, status=503)
+        stream, sections = ai.answer_stream(
+            question, user=request.user, simulate_outage=bool(body.get("simulate_outage")))
+    except LLMError as exc:  # over budget
+        return JsonResponse({"error": str(exc)}, status=503)
 
+    # The session is saved before the body streams, so remember the call now.
     ids = request.session.get("request_ids", [])
-    request.session["request_ids"] = (ids + [str(result.request_id)])[-200:]
+    request.session["request_ids"] = (ids + [str(stream.request_id)])[-200:]
 
-    attempts = list(
-        LLMCall.objects.filter(request_id=result.request_id)
-        .order_by("id")
-        .values("provider", "model", "status", "attempt", "latency_ms", "error")
-    )
-    return JsonResponse(
-        {
-            "answer": result.text,
-            "sources": [] if result.provider == "fake" else [s.label for s in sections],
-            "meta": {
-                "provider": result.provider,
-                "model": result.model,
-                "input_tokens": result.input_tokens,
-                "output_tokens": result.output_tokens,
-                "cost_usd": None if result.cost_usd is None else float(result.cost_usd),
-                "latency_ms": result.latency_ms,
-                "cached": result.cached,
-                "fallback_used": result.fallback_used,
-                "attempts": attempts,
-            },
-            "totals": _session_totals(request),
-        }
-    )
+    started = time.perf_counter()
+
+    def events():
+        with stream:  # closes the stream (and records it) if the browser goes away
+            try:
+                for chunk in stream:
+                    yield _event(type="chunk", text=chunk)
+            except LLMError as exc:
+                yield _event(type="error", error="The assistant stopped halfway. Please try again.",
+                             details=exc.errors, totals=_session_totals(request))
+                return
+        result = stream.result
+        meta = _meta(result)
+        meta["total_ms"] = int((time.perf_counter() - started) * 1000)  # what the reader waited
+        yield _event(
+            type="done",
+            sources=[] if result.provider == "fake" else [s.label for s in sections],
+            meta=meta,
+            totals=_session_totals(request),
+        )
+
+    response = StreamingHttpResponse(events(), content_type="application/x-ndjson")
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"  # tell nginx not to hold the chunks back
+    return response
 
 
 @require_POST

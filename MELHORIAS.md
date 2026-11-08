@@ -15,10 +15,11 @@
 - Avaliações com custo, tokens e tempo por caso; painel mostra nota e custo lado a lado (08/11/2026).
 - GitHub Actions: testes em Python 3.10–3.13 com Django 4.2–6.1 e checagem de migração faltando (08/11/2026).
 
+- Streaming: `llm.stream()` nos 3 provedores, plano B só antes da primeira palavra; chat da loja escreve a resposta aos poucos (08/11/2026).
+
 ## Próximo
 1. Busca da loja: corte de fontes fracas feito (15 de 16 perguntas trazem só a seção certa; "Japão" ainda cita "Boleto"). Próximo nível é embeddings.
-2. Streaming de resposta (o chat da demo vai precisar).
-3. Publicar no PyPI; README com GIF; post explicando as decisões.
+2. Publicar no PyPI; README com GIF; post explicando as decisões.
 
 ## Decisões pendentes (dele)
 - Nome final (`django-llm-ledger` está livre no PyPI em 07/11/2026).

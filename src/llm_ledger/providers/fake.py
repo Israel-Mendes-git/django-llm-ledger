@@ -11,8 +11,10 @@ class FakeProvider(Provider):
     name = "fake"
     is_local = True
 
-    def __init__(self, model="fake", *, reply="ok", fail_times=0, retryable=True, **kwargs):
+    def __init__(self, model="fake", *, reply="ok", fail_times=0, retryable=True, fail_mid_stream=False,
+                 **kwargs):
         super().__init__(model, **kwargs)
+        self.fail_mid_stream = fail_mid_stream
         self.reply = reply
         self.fail_times = fail_times
         self.retryable = retryable
@@ -31,3 +33,12 @@ class FakeProvider(Provider):
             text = self.reply
         # Rough token estimate: 1 token ~ 4 characters.
         return Completion(text, max(1, len(prompt) // 4), max(1, len(text) // 4))
+
+    def stream(self, messages, *, system=None, max_tokens=1024, temperature=0.0):
+        """Yield the reply word by word; ``fail_mid_stream`` breaks after the first word."""
+        completion = self.complete(messages, system=system, max_tokens=max_tokens, temperature=temperature)
+        for index, word in enumerate(completion.text.split(" ")):
+            yield word if index == 0 else " " + word
+            if self.fail_mid_stream:
+                raise ProviderError("fake failure mid-stream", retryable=True)
+        yield completion

@@ -129,6 +129,20 @@ def answer(question, *, user=None, simulate_outage=False):
     return result, sections
 
 
+def answer_stream(question, *, user=None, simulate_outage=False):
+    """Same as ``answer`` but returns an LLMStream; iterate it for the text as it is written."""
+    sections = retrieve(question)
+    stream = client_for(simulate_outage).stream(
+        build_prompt(question, sections),
+        system=SYSTEM_PROMPT,
+        feature="support_chat",
+        user=user,
+        max_tokens=200,
+        use_cache=not simulate_outage,
+    )
+    return stream, sections
+
+
 def answer_text(question):
     """Entry point for evaluation suites: question in, answer text out."""
     result, _ = answer(question)

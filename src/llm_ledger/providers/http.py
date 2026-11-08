@@ -1,5 +1,6 @@
 """Providers that talk HTTP. No vendor SDKs: just httpx, so the package stays small."""
 
+import json
 import os
 
 import httpx
@@ -42,6 +43,33 @@ class HTTPProvider(Provider):
         except ValueError as exc:
             raise ProviderError("invalid JSON in response", retryable=True) from exc
 
+    def _stream_lines(self, path, payload, headers=None):
+        """POST and yield the response body line by line, mapping failures to ProviderError."""
+        try:
+            with httpx.Client(timeout=self.timeout or conf.get("TIMEOUT"), transport=self.transport) as client:
+                with client.stream("POST", f"{self.base_url}{path}", json=payload, headers=headers or {}) as response:
+                    if response.status_code >= 400:
+                        response.read()
+                        raise error_from_status(response.status_code, response.text)
+                    yield from response.iter_lines()
+        except httpx.TimeoutException as exc:
+            raise ProviderError(f"timeout: {exc}", retryable=True) from exc
+        except httpx.TransportError as exc:
+            raise ProviderError(f"connection error: {exc}", retryable=True) from exc
+
+    def _stream_sse(self, path, payload, headers=None):
+        """Yield the decoded JSON of each ``data:`` line of a server-sent events stream."""
+        for line in self._stream_lines(path, payload, headers):
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if not data or data == "[DONE]":
+                continue
+            try:
+                yield json.loads(data)
+            except ValueError as exc:
+                raise ProviderError("invalid JSON in stream", retryable=True) from exc
+
 
 class OllamaProvider(HTTPProvider):
     name = "ollama"
@@ -70,6 +98,30 @@ class OllamaProvider(HTTPProvider):
             raise ProviderError("unexpected Ollama response shape") from exc
         return Completion(text, data.get("prompt_eval_count", 0) or 0, data.get("eval_count", 0) or 0)
 
+    def stream(self, messages, *, system=None, max_tokens=1024, temperature=0.0):
+        chat = ([{"role": "system", "content": system}] if system else []) + list(messages)
+        payload = {
+            "model": self.model,
+            "messages": chat,
+            "stream": True,
+            "options": {"num_predict": max_tokens, "temperature": temperature, **self.model_options},
+        }
+        parts, last = [], {}
+        for line in self._stream_lines("/api/chat", payload):
+            if not line.strip():
+                continue
+            try:
+                last = json.loads(line)
+            except ValueError as exc:
+                raise ProviderError("invalid JSON in Ollama stream", retryable=True) from exc
+            if last.get("error"):
+                raise ProviderError(f"Ollama: {last['error']}", retryable=True)
+            chunk = (last.get("message") or {}).get("content", "")
+            if chunk:
+                parts.append(chunk)
+                yield chunk
+        yield Completion("".join(parts), last.get("prompt_eval_count", 0) or 0, last.get("eval_count", 0) or 0)
+
 
 class OpenAICompatibleProvider(HTTPProvider):
     """OpenAI's chat completions API and the many servers that copy it (LM Studio, vLLM, Groq...)."""
@@ -96,6 +148,21 @@ class OpenAICompatibleProvider(HTTPProvider):
         usage = data.get("usage") or {}
         return Completion(text, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
 
+    def stream(self, messages, *, system=None, max_tokens=1024, temperature=0.0):
+        chat = ([{"role": "system", "content": system}] if system else []) + list(messages)
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+        payload = {"model": self.model, "messages": chat, "max_tokens": max_tokens, "temperature": temperature,
+                   "stream": True, "stream_options": {"include_usage": True}}
+        parts, usage = [], {}
+        for event in self._stream_sse("/chat/completions", payload, headers):
+            usage = event.get("usage") or usage
+            for choice in event.get("choices") or []:
+                chunk = (choice.get("delta") or {}).get("content") or ""
+                if chunk:
+                    parts.append(chunk)
+                    yield chunk
+        yield Completion("".join(parts), usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+
 
 class AnthropicProvider(HTTPProvider):
     name = "anthropic"
@@ -118,3 +185,27 @@ class AnthropicProvider(HTTPProvider):
             raise ProviderError("unexpected Anthropic response shape") from exc
         usage = data.get("usage") or {}
         return Completion(text, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
+
+    def stream(self, messages, *, system=None, max_tokens=1024, temperature=0.0):
+        payload = {"model": self.model, "messages": list(messages), "max_tokens": max_tokens,
+                   "temperature": temperature, "stream": True}
+        if system:
+            payload["system"] = system
+        headers = {"x-api-key": self.api_key, "anthropic-version": self.api_version}
+        parts, input_tokens, output_tokens = [], 0, 0
+        for event in self._stream_sse("/messages", payload, headers):
+            kind = event.get("type")
+            if kind == "message_start":
+                input_tokens = ((event.get("message") or {}).get("usage") or {}).get("input_tokens", 0)
+            elif kind == "content_block_delta" and (event.get("delta") or {}).get("type") == "text_delta":
+                chunk = event["delta"].get("text", "")
+                if chunk:
+                    parts.append(chunk)
+                    yield chunk
+            elif kind == "message_delta":
+                output_tokens = (event.get("usage") or {}).get("output_tokens", output_tokens)
+            elif kind == "error":
+                error = event.get("error") or {}
+                retryable = error.get("type") in ("overloaded_error", "api_error", "rate_limit_error")
+                raise ProviderError(f"Anthropic: {error.get('message', 'stream error')}", retryable=retryable)
+        yield Completion("".join(parts), input_tokens, output_tokens)

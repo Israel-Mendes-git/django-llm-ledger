@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from . import conf
 from .pricing import cost_usd
-from .providers import ProviderError, build_provider
+from .providers import Completion, ProviderError, build_provider
 from .signals import budget_exceeded
 
 logger = logging.getLogger("llm_ledger")
@@ -44,9 +44,54 @@ class LLMResult:
     request_id: uuid.UUID
     attempts: int = 1
     errors: list = field(default_factory=list)
+    #: Streaming only: time from the call until the reader got the first text, failed attempts included.
+    first_chunk_ms: int | None = None
 
     def __str__(self):
         return self.text
+
+
+class LLMStream:
+    """What ``llm.stream()`` returns: iterate it for text chunks, then read ``.result``.
+
+        stream = llm.stream("Write a haiku", feature="haiku")
+        for chunk in stream:
+            send_to_browser(chunk)
+        print(stream.result.cost_usd)
+
+    Retries and fallback only happen before the first chunk: once text has reached the reader,
+    switching to another model would mix two different answers, so a failure after that point
+    raises ``LLMError`` (the partial text is in ``.text``). Closing the stream early (the browser
+    went away) is recorded in the ledger as an error with the partial response.
+    """
+
+    def __init__(self, generator_factory, request_id):
+        #: Known before the first chunk, so a view can store it (in the session, say) up front.
+        self.request_id = request_id
+        self.result = None
+        self.chunks = []
+        self._generator = generator_factory(self)
+
+    @property
+    def text(self):
+        return "".join(self.chunks)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        chunk = next(self._generator)
+        self.chunks.append(chunk)
+        return chunk
+
+    def close(self):
+        self._generator.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.close()
 
 
 def month_spend():
@@ -86,27 +131,11 @@ class LLMClient:
         temperature=0.0,
         use_cache=True,
     ):
-        chain = self.providers()
-        if not chain:
-            raise LLMError("No providers configured (LLM_LEDGER['PROVIDERS'] is empty).")
-
-        request_id = uuid.uuid4()
-        messages = [{"role": "user", "content": prompt}]
-        prompt_hash = self._hash(chain, system, prompt, max_tokens, temperature)
-        user = user if getattr(user, "is_authenticated", False) else None
-        common = {"request_id": request_id, "feature": feature, "user": user, "prompt_hash": prompt_hash}
-
-        self._check_budget()
-
-        ttl = conf.get("CACHE_TTL")
-        cache = caches[conf.get("CACHE_ALIAS")] if use_cache and ttl else None
-        if cache is not None:
-            hit = cache.get(self._cache_key(prompt_hash))
-            if hit is not None:
-                self._record(common, provider=hit["provider"], model=hit["model"], status="cached",
-                             prompt=prompt, response=hit["text"], cost=Decimal(0))
-                return LLMResult(hit["text"], hit["provider"], hit["model"], 0, 0, Decimal(0), 0,
-                                 cached=True, fallback_used=False, request_id=request_id, attempts=0)
+        call = self._prepare(prompt, feature, user, system, max_tokens, temperature, use_cache)
+        if isinstance(call, LLMResult):
+            return call
+        chain, common, cache, ttl, messages = call
+        request_id = common["request_id"]
 
         errors = []
         attempts = 0
@@ -141,7 +170,7 @@ class LLMClient:
                              input_tokens=completion.input_tokens, output_tokens=completion.output_tokens,
                              cost=cost, prompt=prompt, response=completion.text)
                 if cache is not None:
-                    cache.set(self._cache_key(prompt_hash),
+                    cache.set(self._cache_key(common["prompt_hash"]),
                               {"text": completion.text, "provider": provider.name, "model": provider.model}, ttl)
                 return LLMResult(
                     completion.text, provider.name, provider.model, completion.input_tokens,
@@ -151,7 +180,127 @@ class LLMClient:
 
         raise LLMError("All LLM providers failed:\n" + "\n".join(errors), errors)
 
+    def stream(
+        self,
+        prompt,
+        *,
+        feature="",
+        user=None,
+        system=None,
+        max_tokens=1024,
+        temperature=0.0,
+        use_cache=True,
+    ):
+        """Like ``complete`` but returns an ``LLMStream`` that yields the text as it is generated.
+
+        Budget and cache are checked right away, so ``BudgetExceeded`` is raised here and not
+        in the middle of the loop. A cache hit yields the whole answer as a single chunk.
+        """
+        call = self._prepare(prompt, feature, user, system, max_tokens, temperature, use_cache)
+        if isinstance(call, LLMResult):
+            def replay(holder):
+                holder.result = call
+                if call.text:
+                    yield call.text
+            return LLMStream(replay, call.request_id)
+
+        chain, common, cache, ttl, messages = call
+        options = {"system": system, "max_tokens": max_tokens, "temperature": temperature}
+        return LLMStream(lambda holder: self._stream(holder, prompt, chain, common, cache, ttl, messages, options),
+                         common["request_id"])
+
+    def _stream(self, holder, prompt, chain, common, cache, ttl, messages, options):
+        request_started = time.perf_counter()
+        errors = []
+        attempts = 0
+        max_retries = conf.get("MAX_RETRIES")
+        backoff = conf.get("RETRY_BACKOFF")
+
+        for position, provider in enumerate(chain):
+            for attempt in range(1, max_retries + 2):
+                attempts += 1
+                started = time.perf_counter()
+                first_chunk_ms = None
+                sent = []
+                completion = None
+                record = {"provider": provider.name, "model": provider.model, "attempt": attempt,
+                          "is_fallback": position > 0, "prompt": prompt}
+                try:
+                    for item in provider.stream(messages, **options):
+                        if isinstance(item, Completion):
+                            completion = item
+                            break
+                        if first_chunk_ms is None:
+                            first_chunk_ms = int((time.perf_counter() - request_started) * 1000)
+                        sent.append(item)
+                        yield item
+                except ProviderError as exc:
+                    latency = int((time.perf_counter() - started) * 1000)
+                    errors.append(f"{provider.label} (attempt {attempt}): {exc}")
+                    self._record(common, **record, status="error", latency=latency,
+                                 response="".join(sent), error=str(exc))
+                    logger.warning("LLM stream failed: %s attempt %s: %s", provider.label, attempt, exc)
+                    if sent:
+                        raise LLMError(f"Stream broke after part of the answer was sent: {exc}", errors) from exc
+                    if exc.retryable and attempt <= max_retries:
+                        if backoff:
+                            self._sleep(backoff * 2 ** (attempt - 1))
+                        continue
+                    break  # next provider
+                except GeneratorExit:
+                    latency = int((time.perf_counter() - started) * 1000)
+                    self._record(common, **record, status="error", latency=latency,
+                                 response="".join(sent), error="stream closed by the caller before the end")
+                    raise
+
+                latency = int((time.perf_counter() - started) * 1000)
+                completion = completion or Completion("".join(sent))
+                cost = cost_usd(provider, completion.input_tokens, completion.output_tokens)
+                self._record(common, **record, status="ok", latency=latency,
+                             input_tokens=completion.input_tokens, output_tokens=completion.output_tokens,
+                             cost=cost, response=completion.text)
+                if cache is not None:
+                    cache.set(self._cache_key(common["prompt_hash"]),
+                              {"text": completion.text, "provider": provider.name, "model": provider.model}, ttl)
+                holder.result = LLMResult(
+                    completion.text, provider.name, provider.model, completion.input_tokens,
+                    completion.output_tokens, cost, latency, cached=False, fallback_used=position > 0,
+                    request_id=common["request_id"], attempts=attempts, errors=errors,
+                    first_chunk_ms=first_chunk_ms,
+                )
+                return
+
+        raise LLMError("All LLM providers failed:\n" + "\n".join(errors), errors)
+
     # ----------------------------------------------------------------- helpers
+
+    def _prepare(self, prompt, feature, user, system, max_tokens, temperature, use_cache):
+        """Shared start of complete/stream: chain, ledger fields, budget and cache.
+
+        Returns an ``LLMResult`` on a cache hit, otherwise (chain, common, cache, ttl, messages).
+        """
+        chain = self.providers()
+        if not chain:
+            raise LLMError("No providers configured (LLM_LEDGER['PROVIDERS'] is empty).")
+
+        request_id = uuid.uuid4()
+        messages = [{"role": "user", "content": prompt}]
+        prompt_hash = self._hash(chain, system, prompt, max_tokens, temperature)
+        user = user if getattr(user, "is_authenticated", False) else None
+        common = {"request_id": request_id, "feature": feature, "user": user, "prompt_hash": prompt_hash}
+
+        self._check_budget()
+
+        ttl = conf.get("CACHE_TTL")
+        cache = caches[conf.get("CACHE_ALIAS")] if use_cache and ttl else None
+        if cache is not None:
+            hit = cache.get(self._cache_key(prompt_hash))
+            if hit is not None:
+                self._record(common, provider=hit["provider"], model=hit["model"], status="cached",
+                             prompt=prompt, response=hit["text"], cost=Decimal(0))
+                return LLMResult(hit["text"], hit["provider"], hit["model"], 0, 0, Decimal(0), 0,
+                                 cached=True, fallback_used=False, request_id=request_id, attempts=0)
+        return chain, common, cache, ttl, messages
 
     @staticmethod
     def _hash(chain, system, prompt, max_tokens, temperature):
