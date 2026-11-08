@@ -19,8 +19,11 @@
 
 - Busca da loja por embeddings (`all-minilm`, 46 MB) com busca por palavra como reserva; "Japão" agora cita "Where we ship" e perguntas sem palavra em comum acham a seção (08/11/2026). Ainda erra "How do I talk to someone?" (não acha Contact).
 
+- Preparação para o PyPI: LICENSE, CHANGELOG, metadados, `twine check` ok, instalação testada num projeto Django novo; GIF no README (08/11/2026).
+
 ## Próximo
-1. Publicar no PyPI; README com GIF; post explicando as decisões.
+1. Publicar no PyPI (pacote pronto e testado em projeto limpo; falta conta/token dele e o aval).
+2. Post explicando as decisões.
 
 ## Decisões pendentes (dele)
 - Nome final (`django-llm-ledger` está livre no PyPI em 07/11/2026).

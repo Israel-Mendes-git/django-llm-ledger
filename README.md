@@ -15,11 +15,11 @@ answer = llm.complete(
 print(answer.text, answer.cost_usd, answer.latency_ms)
 ```
 
-![Demo store streaming an answer from a local model](docs/images/demo-streaming.png)
+![Demo store: an answer streams from a local model, then the main provider goes down and the fallback answers](https://github.com/Israel-Mendes-git/django-llm-ledger/raw/master/docs/images/demo.gif)
 
-![Demo store: the main provider is down, the call is retried twice and a local model answers](docs/images/demo-chat-fallback.png)
+![Demo store: the main provider is down, the call is retried twice and a local model answers](https://github.com/Israel-Mendes-git/django-llm-ledger/raw/master/docs/images/demo-chat-fallback.png)
 
-![Cost dashboard in the Django admin](docs/images/admin-dashboard.png)
+![Cost dashboard in the Django admin](https://github.com/Israel-Mendes-git/django-llm-ledger/raw/master/docs/images/admin-dashboard.png)
 
 ## What you get
 
