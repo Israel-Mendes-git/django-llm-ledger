@@ -206,3 +206,19 @@ def test_global_budget_signal_has_no_feature(ledger):
         assert received[0]["feature"] is None
     finally:
         budget_exceeded.disconnect(dispatch_uid="t-global")
+
+
+def test_budget_spend_is_reused_for_a_while(ledger, monkeypatch):
+    from llm_ledger import client as client_module
+
+    calls = []
+    real = client_module.month_spend
+    monkeypatch.setattr(client_module, "month_spend", lambda scope=None: calls.append(scope) or real(scope))
+    ledger(MONTHLY_BUDGET_USD=100, FEATURE_BUDGETS_USD={"chat": 50})
+    for _ in range(3):
+        llm.complete("q", feature="chat", use_cache=False)
+    assert calls == [None, "chat"]  # summed once per scope, then reused
+
+    ledger(BUDGET_CHECK_TTL=0)
+    llm.complete("q", feature="chat", use_cache=False)
+    assert calls == [None, "chat", None, "chat"]

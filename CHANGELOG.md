@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Budget checks reuse the month's spend for `BUDGET_CHECK_TTL` seconds (default 60) instead of
+  summing the ledger on every call.
 - `manage.py llm_ledger_prune`: delete old calls (`--days`) or only their prompt/response text
   (`--texts-older-than`), in batches, with `--dry-run`. Defaults from `RETENTION_DAYS` and
   `TEXT_RETENTION_DAYS`.

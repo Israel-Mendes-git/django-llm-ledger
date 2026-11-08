@@ -80,6 +80,7 @@ The dashboard lives at **Admin → LLM calls → Cost dashboard**.
 | `CACHE_ALIAS` | `"default"` | Which Django cache to use. |
 | `MONTHLY_BUDGET_USD` | `None` | Sends `budget_exceeded` when reached. |
 | `FEATURE_BUDGETS_USD` | `{}` | Monthly limit per feature, e.g. `{"support_chat": 20}`. Shown in the dashboard; a bar turns amber at 80%. |
+| `BUDGET_CHECK_TTL` | `60` | Seconds to reuse the month's spend when checking budgets, so a busy site does not sum the ledger on every call. A spent budget can take this long to be noticed; `0` checks every call. |
 | `BLOCK_OVER_BUDGET` | `False` | Raise `BudgetExceeded` instead of just signalling. With feature budgets, only the feature over its limit is blocked. |
 | `RETENTION_DAYS` | `None` | Default for `llm_ledger_prune`: delete calls older than this. |
 | `TEXT_RETENTION_DAYS` | `None` | Default for `llm_ledger_prune`: blank prompts and responses older than this; costs stay. |

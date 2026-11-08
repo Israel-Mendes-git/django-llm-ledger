@@ -418,6 +418,20 @@ class LLMClient:
     def _cache_key(prompt_hash):
         return f"llm_ledger:{prompt_hash}"
 
+    @staticmethod
+    def _cached_spend(scope):
+        """month_spend, reused for BUDGET_CHECK_TTL seconds so budgets do not cost a query per call."""
+        ttl = conf.get("BUDGET_CHECK_TTL")
+        if not ttl:
+            return month_spend(scope)
+        cache = caches[conf.get("CACHE_ALIAS")]
+        key = f"llm_ledger:spend:{timezone.now():%Y-%m}:{scope or ''}"
+        spent = cache.get(key)
+        if spent is None:
+            spent = month_spend(scope)
+            cache.set(key, spent, ttl)
+        return spent
+
     def _check_budget(self, feature=""):
         checks = [(None, conf.get("MONTHLY_BUDGET_USD"))]
         if feature:
@@ -426,7 +440,7 @@ class LLMClient:
             if budget is None:
                 continue
             budget = Decimal(str(budget))
-            spent = month_spend(scope)
+            spent = self._cached_spend(scope)
             if spent < budget:
                 continue
             what = f"budget of feature {scope!r}" if scope else "LLM budget"

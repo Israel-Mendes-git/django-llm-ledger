@@ -22,6 +22,9 @@ DEFAULTS = {
     # Monthly budget per feature in USD: {"support_chat": 20}. Features not listed have no limit
     # of their own (the global MONTHLY_BUDGET_USD still applies).
     "FEATURE_BUDGETS_USD": {},
+    # Seconds to reuse the month's spend when checking budgets, instead of summing the ledger on
+    # every call. A spent budget can take this long to be noticed. 0 sums on every call.
+    "BUDGET_CHECK_TTL": 60,
     # When True, calls raise BudgetExceeded once the monthly budget (global or the feature's) is spent.
     "BLOCK_OVER_BUDGET": False,
     # Optional exchange rate to show costs in a second currency in the dashboard.
