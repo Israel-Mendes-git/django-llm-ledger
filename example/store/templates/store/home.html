@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Serra Verde Coffee · django-llm-ledger demo</title>
+<style>
+  :root {
+    --bg: #f6f3ee; --card: #fff; --ink: #2b2620; --muted: #7a7166; --line: #e7e0d6;
+    --brand: #2f5d3a; --brand-soft: #e5efe6; --accent: #b5652b; --warn: #b3261e; --warn-soft: #fbe9e7;
+    --code: #1f1b16;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--brand); color: #fff; padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; }
+  header .logo { font-weight: 700; font-size: 18px; letter-spacing: .3px; }
+  header .tag { font-size: 12px; opacity: .8; }
+  main { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; padding: 24px 28px; max-width: 1280px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 12px; }
+
+  /* chat */
+  .chat { display: flex; flex-direction: column; height: calc(100vh - 120px); min-height: 520px; }
+  .chat-head { padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .chat-head b { display: block; }
+  .chat-head span { color: var(--muted); font-size: 13px; }
+  .messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; }
+  .msg.user { align-self: flex-end; background: var(--brand); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--brand-soft); border-bottom-left-radius: 4px; }
+  .msg.bot .src { margin-top: 8px; font-size: 12px; color: var(--muted); white-space: normal; }
+  .msg.err { align-self: flex-start; background: var(--warn-soft); color: var(--warn); }
+  .msg.typing { color: var(--muted); font-style: italic; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 20px 12px; }
+  .chip { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; color: var(--ink); }
+  .chip:disabled { opacity: .5; cursor: default; }
+  .chip:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+  form.ask { display: flex; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--line); }
+  form.ask input { flex: 1; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+  button.primary { background: var(--brand); color: #fff; border: 0; border-radius: 10px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  .human { padding: 0 20px 14px; font-size: 13px; }
+  .human a { color: var(--accent); cursor: pointer; }
+  .human form { display: none; gap: 8px; margin-top: 8px; }
+  .human form.open { display: flex; }
+  .human input { flex: 1; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+
+  /* panel */
+  .panel { display: flex; flex-direction: column; gap: 16px; }
+  .panel .card { padding: 18px 20px; }
+  .intro { font-size: 14px; color: var(--muted); }
+  .intro code { background: var(--brand-soft); color: var(--brand); padding: 1px 5px; border-radius: 4px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .stat .v { font-size: 20px; font-weight: 650; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); }
+  .badge.warn { background: var(--warn-soft); color: var(--warn); }
+  .badge.gold { background: #fbefe2; color: var(--accent); }
+  .attempts { list-style: none; padding: 0; margin: 12px 0 0; font-size: 13px; }
+  .attempts li { display: flex; gap: 8px; align-items: baseline; padding: 6px 0; border-top: 1px dashed var(--line); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; transform: translateY(-1px); }
+  .dot.ok { background: var(--brand); } .dot.error { background: var(--warn); } .dot.cached { background: var(--accent); }
+  .attempts .err { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { color: var(--muted); font-size: 14px; }
+  .toggle { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+  .toggle input { margin-top: 4px; }
+  .toggle small { display: block; color: var(--muted); }
+  .links a { color: var(--brand); font-weight: 600; text-decoration: none; }
+  .links a:hover { text-decoration: underline; }
+  .eval { font-size: 14px; }
+  .eval .score { font-weight: 700; color: var(--brand); }
+  pre { background: var(--code); color: #e8e2d8; border-radius: 8px; padding: 12px; font-size: 12px; overflow-x: auto; margin: 10px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">☕ Serra Verde Coffee Roasters</div>
+  <div class="tag">Demo store for <b>django-llm-ledger</b> — fictional shop, fake data</div>
+</header>
+
+<main>
+  <section class="card chat">
+    <div class="chat-head">
+      <b>Support assistant</b>
+      <span>Answers from the shop's help center and cites its sources.</span>
+    </div>
+    <div class="messages" id="messages">
+      <div class="msg bot">Hi! Ask me about shipping, returns, payment, our coffee or the subscription.</div>
+    </div>
+    <div class="chips" id="chips">
+      <button class="chip">How long do I have to return a bag?</button>
+      <button class="chip">Do you ship to Portugal?</button>
+      <button class="chip">Is there a discount for Pix?</button>
+      <button class="chip">How should I store the beans?</button>
+      <button class="chip">Can I pause my subscription?</button>
+      <button class="chip">Do you sell tea?</button>
+    </div>
+    <form class="ask" id="ask">
+      <input id="question" autocomplete="off" placeholder="Type your question…" maxlength="500">
+      <button class="primary" id="send">Send</button>
+    </form>
+    <div class="human">
+      Not what you needed? <a id="human-link">Talk to a human</a>
+      <form id="human-form">
+        <input id="human-email" type="email" placeholder="your@email.com" required>
+        <button class="primary">Send to support</button>
+      </form>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div class="card intro">
+      <h2>Behind the scenes</h2>
+      Every answer goes through <code>llm.complete()</code>, which logs cost, tokens and latency, retries
+      failures and falls back to the next provider. This panel shows what the store owner sees.
+    </div>
+
+    <div class="card">
+      <h2>Last answer</h2>
+      <div id="last" class="empty">Ask something to see the call details.</div>
+    </div>
+
+    <div class="card">
+      <h2>This session</h2>
+      <div class="stats">
+        <div class="stat"><div class="k">Answers</div><div class="v" id="t-answers">{{ totals.answers }}</div></div>
+        <div class="stat"><div class="k">Cost (USD)</div><div class="v" id="t-cost">${{ totals.cost|floatformat:4 }}</div></div>
+        <div class="stat"><div class="k">Failed attempts</div><div class="v" id="t-errors">{{ totals.errors }}</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Try a failure</h2>
+      <label class="toggle">
+        <input type="checkbox" id="outage">
+        <span>Simulate the primary provider being down
+          <small>The first provider points at a dead address. Watch it retry, then fall back.</small></span>
+      </label>
+    </div>
+
+    <div class="card eval">
+      <h2>Answer quality</h2>
+      {% if last_eval %}
+        Last evaluation: <span class="score">{{ last_eval.passed }}/{{ last_eval.total }}</span> cases passed
+        ({{ last_eval.created_at|date:"M j, H:i" }}).
+      {% else %}
+        <span class="empty">No evaluation yet.</span>
+      {% endif %}
+      <pre>python manage.py llm_evaluate evals/</pre>
+    </div>
+
+    <div class="card links">
+      <h2>For the store owner</h2>
+      <a href="/admin/llm_ledger/llmcall/dashboard/">Open the cost dashboard →</a>
+    </div>
+  </aside>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const csrf = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || "";
+let lastQuestion = "";
+let busy = false;
+
+function add(cls, text) {
+  const el = document.createElement("div");
+  el.className = "msg " + cls;
+  el.textContent = text;
+  $("messages").appendChild(el);
+  $("messages").scrollTop = $("messages").scrollHeight;
+  return el;
+}
+
+function money(v) { return v === null ? "unpriced" : "$" + v.toFixed(6); }
+
+function renderMeta(meta) {
+  const badges = [];
+  if (meta.cached) badges.push('<span class="badge gold">served from cache</span>');
+  if (meta.fallback_used) badges.push('<span class="badge warn">answered by fallback</span>');
+  const attempts = meta.attempts.map(a => `
+    <li><span class="dot ${a.status}"></span>
+      <span><b>${a.provider}:${a.model}</b> · ${a.status} · ${a.latency_ms} ms
+      ${a.error ? `<div class="err">${a.error.replace(/</g, "&lt;")}</div>` : ""}</span></li>`).join("");
+  $("last").className = "";
+  $("last").innerHTML = `
+    <div class="stats">
+      <div class="stat"><div class="k">Cost</div><div class="v">${money(meta.cost_usd)}</div></div>
+      <div class="stat"><div class="k">Latency</div><div class="v">${meta.latency_ms} ms</div></div>
+      <div class="stat"><div class="k">Tokens</div><div class="v">${meta.input_tokens} → ${meta.output_tokens}</div></div>
+    </div>
+    <div class="badges"><span class="badge">${meta.provider}:${meta.model}</span>${badges.join("")}</div>
+    <ul class="attempts">${attempts}</ul>`;
+}
+
+function renderTotals(t) {
+  $("t-answers").textContent = t.answers;
+  $("t-cost").textContent = "$" + t.cost.toFixed(4);
+  $("t-errors").textContent = t.errors;
+}
+
+async function ask(question) {
+  if (!question || busy) return;
+  busy = true;
+  document.querySelectorAll(".chip").forEach(c => c.disabled = true);
+  lastQuestion = question;
+  add("user", question);
+  $("question").value = "";
+  $("send").disabled = true;
+  const typing = add("bot typing", "Thinking…");
+  try {
+    const res = await fetch("/ask/", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSRFToken": csrf},
+      body: JSON.stringify({question, simulate_outage: $("outage").checked}),
+    });
+    const data = await res.json();
+    typing.remove();
+    if (!res.ok) { add("err", data.error || "Something went wrong."); return; }
+    const msg = add("bot", data.answer);
+    if (data.sources.length) {
+      const src = document.createElement("div");
+      src.className = "src";
+      src.textContent = "Sources: " + data.sources.map((s, i) => `[${i + 1}] ${s}`).join("  ·  ");
+      msg.appendChild(src);
+    }
+    renderMeta(data.meta);
+    renderTotals(data.totals);
+  } catch (e) {
+    typing.remove();
+    add("err", "Network error.");
+  } finally {
+    busy = false;
+    document.querySelectorAll(".chip").forEach(c => c.disabled = false);
+    $("send").disabled = false;
+    $("question").focus();
+  }
+}
+
+$("ask").addEventListener("submit", (e) => { e.preventDefault(); ask($("question").value.trim()); });
+$("chips").addEventListener("click", (e) => { if (e.target.matches(".chip")) ask(e.target.textContent); });
+$("human-link").addEventListener("click", () => $("human-form").classList.toggle("open"));
+$("human-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const res = await fetch("/handoff/", {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-CSRFToken": csrf},
+    body: JSON.stringify({email: $("human-email").value, question: lastQuestion || "(no question yet)"}),
+  });
+  $("human-form").classList.remove("open");
+  add(res.ok ? "bot" : "err", res.ok ? "Thanks! Our team will email you within one business day." : "Please enter a valid email.");
+});
+</script>
+</body>
+</html>

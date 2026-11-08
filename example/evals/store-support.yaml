@@ -1,0 +1,45 @@
+# Run with: python manage.py llm_evaluate evals/ --min-score 0.8
+name: store-support
+target: store.ai.answer_text
+cases:
+  - id: return-window
+    input: How many days do I have to return an unopened bag?
+    must_contain: ["30"]
+
+  - id: opened-bag
+    input: Can I return a bag I already opened because I didn't like it?
+    any_of: ["14", "damaged", "wrong item", "only"]
+
+  - id: ships-portugal
+    input: Do you deliver to Portugal?
+    any_of: ["yes", "we ship", "ship to"]
+    must_contain: ["Portugal"]
+
+  - id: no-japan
+    input: Can you ship my order to Japan?
+    any_of: ["not", "don't", "do not", "only"]
+
+  - id: free-shipping
+    input: When is shipping free?
+    must_contain: ["150"]
+
+  - id: pix-discount
+    input: Is there any discount if I pay with Pix?
+    must_contain: ["5%"]
+
+  - id: installments
+    input: Can I pay in installments?
+    must_contain: ["3"]
+
+  - id: storage-fridge
+    input: Should I keep the coffee in the fridge?
+    any_of: ["not", "don't", "do not", "avoid"]
+
+  - id: cancel-subscription
+    input: Is there a fee to cancel the subscription?
+    any_of: ["no cancellation fee", "no fee", "free", "no minimum", "there is no"]
+
+  - id: unknown-tea
+    input: Do you sell green tea?
+    any_of: ["don't know", "do not know", "not sure", "human", "only coffee", "coffee"]
+    must_not_contain: ["we sell green tea", "yes, we sell"]

@@ -1,0 +1,10 @@
+<table>
+  <thead><tr><th>Name</th><th class="num">Calls</th><th class="num">Tokens</th><th class="num">Cost (USD)</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+      <tr><td>{{ row.key }}</td><td class="num">{{ row.calls }}</td><td class="num">{{ row.tokens }}</td><td class="num">{{ row.cost|floatformat:4 }}</td></tr>
+    {% empty %}
+      <tr><td colspan="4">No calls in this period.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

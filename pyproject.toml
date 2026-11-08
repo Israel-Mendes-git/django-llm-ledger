@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "django-llm-ledger"
+version = "0.1.0"
+description = "Cost tracking, provider fallback and evaluation suites for LLM features in Django apps."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "Django>=4.2",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+yaml = ["PyYAML>=6.0"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-django>=4.8",
+    "PyYAML>=6.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llm_ledger"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.settings"
+pythonpath = [".", "src"]
+testpaths = ["tests"]

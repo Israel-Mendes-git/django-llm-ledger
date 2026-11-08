@@ -1,0 +1,94 @@
+{% extends "admin/base_site.html" %}
+{% block extrastyle %}{{ block.super }}
+<style>
+  .ll-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .ll-card { border: 1px solid var(--hairline-color); border-radius: 6px; padding: 12px 16px; }
+  .ll-card .ll-label { color: var(--body-quiet-color); font-size: 12px; text-transform: uppercase; }
+  .ll-card .ll-value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+  .ll-card .ll-sub { color: var(--body-quiet-color); font-size: 12px; }
+  .ll-warn { color: var(--error-fg); }
+  .ll-bar { height: 8px; background: var(--darkened-bg); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+  .ll-bar > span { display: block; height: 100%; background: var(--primary); }
+  .ll-bar.over > span { background: var(--error-fg); }
+  .ll-chart { display: flex; align-items: flex-end; gap: 2px; height: 120px; border-bottom: 1px solid var(--hairline-color); margin-bottom: 24px; }
+  .ll-chart span { flex: 1; background: var(--primary); min-height: 1px; }
+  .ll-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+  .ll-tables table { width: 100%; }
+  .ll-tables td.num, .ll-tables th.num { text-align: right; }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a> &rsaquo;
+  <a href="{% url 'admin:llm_ledger_llmcall_changelist' %}">LLM calls</a> &rsaquo; Cost dashboard
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="ll-grid">
+  <div class="ll-card">
+    <div class="ll-label">Spent this month</div>
+    <div class="ll-value{% if over_budget %} ll-warn{% endif %}">${{ spent|floatformat:2 }}</div>
+    {% if spent_local is not None %}<div class="ll-sub">{{ local_code }} {{ spent_local|floatformat:2 }}</div>{% endif %}
+    {% if budget is not None %}
+      <div class="ll-bar{% if over_budget %} over{% endif %}"><span style="width: {{ budget_pct|floatformat:0 }}%"></span></div>
+      <div class="ll-sub">budget ${{ budget|floatformat:2 }}</div>
+    {% endif %}
+  </div>
+  <div class="ll-card">
+    <div class="ll-label">Calls ({{ days }} days)</div>
+    <div class="ll-value">{{ totals.calls }}</div>
+    <div class="ll-sub">{{ totals.cached }} from cache</div>
+  </div>
+  <div class="ll-card">
+    <div class="ll-label">Error rate</div>
+    <div class="ll-value{% if error_rate > 5 %} ll-warn{% endif %}">{{ error_rate|floatformat:1 }}%</div>
+    <div class="ll-sub">{{ totals.fallbacks }} answered by fallback</div>
+  </div>
+  <div class="ll-card">
+    <div class="ll-label">Avg latency</div>
+    <div class="ll-value">{{ totals.latency|default:0|floatformat:0 }} ms</div>
+  </div>
+  {% if totals.unpriced %}
+  <div class="ll-card">
+    <div class="ll-label">Unpriced calls</div>
+    <div class="ll-value ll-warn">{{ totals.unpriced }}</div>
+    <div class="ll-sub">add the model to LLM_LEDGER["PRICES"]</div>
+  </div>
+  {% endif %}
+</div>
+
+<h2>Cost per day</h2>
+<div class="ll-chart">
+  {% for d in per_day %}<span style="height: {{ d.pct|floatformat:0 }}%" title="{{ d.day }}: ${{ d.cost|floatformat:4 }}"></span>{% endfor %}
+</div>
+
+<div class="ll-tables">
+  <div>
+    <h2>By feature</h2>
+    {% include "admin/llm_ledger/_group_table.html" with rows=by_feature %}
+  </div>
+  <div>
+    <h2>By model</h2>
+    {% include "admin/llm_ledger/_group_table.html" with rows=by_model %}
+  </div>
+  <div>
+    <h2>Top users</h2>
+    {% include "admin/llm_ledger/_group_table.html" with rows=by_user %}
+  </div>
+  <div>
+    <h2>Last evaluations</h2>
+    <table>
+      <thead><tr><th>Suite</th><th class="num">Score</th><th>When</th></tr></thead>
+      <tbody>
+        {% for run in last_evals %}
+          <tr><td>{{ run.suite }}</td><td class="num">{{ run.passed }}/{{ run.total }}</td><td>{{ run.created_at|date:"SHORT_DATETIME_FORMAT" }}</td></tr>
+        {% empty %}
+          <tr><td colspan="3">No runs yet. Try <code>manage.py llm_evaluate evals/</code>.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
